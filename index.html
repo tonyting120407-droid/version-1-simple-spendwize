@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SpendWise</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app">
+    <h1>SpendWise</h1>
+
+    <form id="transaction-form" class="card">
+      <h2>Add Transaction</h2>
+      <label for="amount">Amount ($)</label>
+      <input id="amount" name="amount" type="number" min="0" step="0.01" required />
+
+      <label for="description">What did you buy?</label>
+      <input id="description" name="description" type="text" placeholder="e.g. Uber ride" required />
+
+      <button type="submit">Save Transaction</button>
+    </form>
+
+    <section class="card">
+      <h2>Saved Transactions</h2>
+      <ul id="transaction-list" class="transaction-list"></ul>
+      <p id="empty-state" class="empty">No transactions yet.</p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
