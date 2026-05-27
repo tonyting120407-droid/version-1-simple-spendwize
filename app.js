@@ -74,14 +74,25 @@ function renderTransactions(transactions) {
     const li = document.createElement("li");
     li.className = "rounded-lg border border-slate-200 p-3 sm:p-4 bg-slate-50 flex items-start justify-between gap-4";
 
-    li.innerHTML = `
-      <div>
-        <p class="font-semibold text-lg">${formatCurrency(transaction.amount)}</p>
-        <p class="text-slate-700">${transaction.description}</p>
-        <p class="text-sm text-slate-500">Category: ${transaction.category}</p>
-        <p class="text-sm text-slate-500">Date: ${formatDate(transaction.createdAt)}</p>
-      </div>
-    `;
+    const details = document.createElement("div");
+
+    const amountLine = document.createElement("p");
+    amountLine.className = "font-semibold text-lg";
+    amountLine.textContent = formatCurrency(transaction.amount);
+
+    const descriptionLine = document.createElement("p");
+    descriptionLine.className = "text-slate-700";
+    descriptionLine.textContent = transaction.description;
+
+    const categoryLine = document.createElement("p");
+    categoryLine.className = "text-sm text-slate-500";
+    categoryLine.textContent = `Category: ${transaction.category}`;
+
+    const dateLine = document.createElement("p");
+    dateLine.className = "text-sm text-slate-500";
+    dateLine.textContent = `Date: ${formatDate(transaction.createdAt)}`;
+
+    details.append(amountLine, descriptionLine, categoryLine, dateLine);
 
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
@@ -89,7 +100,7 @@ function renderTransactions(transactions) {
     deleteButton.className = "rounded-lg bg-rose-600 px-3 py-2 text-white text-sm font-medium hover:bg-rose-700 transition";
     deleteButton.addEventListener("click", () => deleteTransaction(transaction.id));
 
-    li.appendChild(deleteButton);
+    li.append(details, deleteButton);
     transactionList.appendChild(li);
   });
 }
@@ -113,7 +124,12 @@ function renderSummary(transactions) {
     const amount = totalsByCategory[category];
     const item = document.createElement("li");
     item.className = "flex justify-between rounded-md border border-slate-200 px-3 py-2 bg-white";
-    item.innerHTML = `<span>${category}</span><span class="font-medium">${formatCurrency(amount)}</span>`;
+    const categoryName = document.createElement("span");
+    categoryName.textContent = category;
+    const categoryAmount = document.createElement("span");
+    categoryAmount.className = "font-medium";
+    categoryAmount.textContent = formatCurrency(amount);
+    item.append(categoryName, categoryAmount);
     categorySummaryElement.appendChild(item);
   });
 }
@@ -140,7 +156,7 @@ form.addEventListener("submit", (event) => {
   }
 
   const transaction = {
-    id: crypto.randomUUID(),
+    id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
     amount,
     description,
     category: categorize(description),
