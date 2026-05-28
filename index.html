@@ -36,11 +36,12 @@
                 <option>Food</option><option>Groceries</option><option>Transportation</option><option>Entertainment</option><option>Electronics</option><option>Bills</option><option>Rent</option><option selected>Other</option>
               </select>
             </div>
-            <div>
-              <label for="payment-method" class="block text-sm font-medium text-slate-700 mb-1">Payment Method</label>
-              <select id="payment-method" name="payment-method" class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option selected>Cash</option><option>Debit Card</option><option>Credit Card</option><option>Other</option>
-              </select>
+            <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <label for="spent-on-credit-card" class="flex items-center gap-3 text-sm font-medium text-slate-700">
+                <input id="spent-on-credit-card" name="spent-on-credit-card" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                <span>Spent on Credit Card</span>
+              </label>
+              <p class="mt-1 text-xs text-slate-500">Turn this on to connect the purchase to a saved credit card.</p>
             </div>
           </div>
           <div id="credit-card-used-wrap" class="hidden">
@@ -48,7 +49,8 @@
             <select id="credit-card-used" name="credit-card-used" class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">Uncategorized credit spending</option>
             </select>
-            <p class="text-xs text-slate-500 mt-1">Choose a saved card from Advanced Mode, or leave blank to save as uncategorized credit spending.</p>
+            <p id="no-credit-cards-message" class="hidden text-xs text-amber-700 mt-1">No credit cards added yet. Add one in Advanced Mode.</p>
+            <p class="text-xs text-slate-500 mt-1">Choose a saved card from Advanced Mode, or leave blank to save as general credit card spending.</p>
           </div>
           <div class="grid gap-4 sm:grid-cols-2">
             <div>
