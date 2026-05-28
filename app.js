@@ -21,15 +21,15 @@ const categoryKeywords = {
   Rent: ["rent", "apartment", "lease", "landlord"],
 };
 
-const form = document.getElementById("transaction-form");
-const amountInput = document.getElementById("amount");
-const descriptionInput = document.getElementById("description");
-const categoryPreview = document.getElementById("category-preview");
-const transactionList = document.getElementById("transaction-list");
-const emptyState = document.getElementById("empty-state");
-const totalSpentElement = document.getElementById("total-spent");
-const transactionCountElement = document.getElementById("transaction-count");
-const categorySummaryElement = document.getElementById("category-summary");
+let form;
+let amountInput;
+let descriptionInput;
+let categoryPreview;
+let transactionList;
+let emptyState;
+let totalSpentElement;
+let transactionCountElement;
+let categorySummaryElement;
 
 function getTransactions() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -101,6 +101,25 @@ function deleteTransaction(id) {
   const transactions = getTransactions().filter((transaction) => transaction.id !== id);
   saveTransactions(transactions);
   render();
+}
+
+
+function initElements() {
+  form = document.getElementById("transaction-form");
+  amountInput = document.getElementById("amount");
+  descriptionInput = document.getElementById("description");
+  categoryPreview = document.getElementById("category-preview");
+  transactionList = document.getElementById("transaction-list");
+  emptyState = document.getElementById("empty-state");
+  totalSpentElement = document.getElementById("total-spent");
+  transactionCountElement = document.getElementById("transaction-count");
+  categorySummaryElement = document.getElementById("category-summary");
+
+  return Boolean(
+    form && amountInput && descriptionInput && categoryPreview &&
+    transactionList && emptyState && totalSpentElement &&
+    transactionCountElement && categorySummaryElement
+  );
 }
 
 function renderTransactions(transactions) {
@@ -178,36 +197,41 @@ function render() {
   renderSummary(transactions);
 }
 
-descriptionInput.addEventListener("input", () => {
-  const nextCategory = categorize(descriptionInput.value.trim());
-  categoryPreview.textContent = `Category preview: ${nextCategory}`;
-});
+function bindEvents() {
+  descriptionInput.addEventListener("input", () => {
+    const nextCategory = categorize(descriptionInput.value.trim());
+    categoryPreview.textContent = `Category preview: ${nextCategory}`;
+  });
 
-form.addEventListener("submit", (event) => {
-  event.preventDefault();
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
 
-  const amount = Number(amountInput.value);
-  const description = descriptionInput.value.trim();
+    const amount = Number(amountInput.value);
+    const description = descriptionInput.value.trim();
 
-  if (!Number.isFinite(amount) || amount <= 0 || !description) {
-    return;
-  }
+    if (!Number.isFinite(amount) || amount <= 0 || !description) {
+      return;
+    }
 
-  const transaction = {
-    id: generateTransactionId(),
-    amount,
-    description,
-    category: categorize(description),
-    createdAt: new Date().toISOString(),
-  };
+    const transaction = {
+      id: generateTransactionId(),
+      amount,
+      description,
+      category: categorize(description),
+      createdAt: new Date().toISOString(),
+    };
 
-  const transactions = getTransactions().map(normalizeTransaction);
-  transactions.unshift(transaction);
-  saveTransactions(transactions);
+    const transactions = getTransactions().map(normalizeTransaction);
+    transactions.unshift(transaction);
+    saveTransactions(transactions);
 
-  form.reset();
-  categoryPreview.textContent = "Category preview: Other";
+    form.reset();
+    categoryPreview.textContent = "Category preview: Other";
+    render();
+  });
+}
+
+if (initElements()) {
+  bindEvents();
   render();
-});
-
-render();
+}
