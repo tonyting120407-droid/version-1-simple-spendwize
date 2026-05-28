@@ -30,6 +30,8 @@ let emptyState;
 let totalSpentElement;
 let transactionCountElement;
 let categorySummaryElement;
+let summaryHistoryElement;
+let formMessage;
 
 function getTransactions() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -114,12 +116,21 @@ function initElements() {
   totalSpentElement = document.getElementById("total-spent");
   transactionCountElement = document.getElementById("transaction-count");
   categorySummaryElement = document.getElementById("category-summary");
+  summaryHistoryElement = document.getElementById("summary-history");
+  formMessage = document.getElementById("form-message");
 
   return Boolean(
     form && amountInput && descriptionInput && categoryPreview &&
     transactionList && emptyState && totalSpentElement &&
-    transactionCountElement && categorySummaryElement
+    transactionCountElement && categorySummaryElement &&
+    summaryHistoryElement && formMessage
   );
+}
+
+
+function setFormMessage(message = "") {
+  formMessage.textContent = message;
+  formMessage.classList.toggle("hidden", !message);
 }
 
 function renderTransactions(transactions) {
@@ -177,6 +188,7 @@ function renderSummary(transactions) {
   });
 
   categorySummaryElement.innerHTML = "";
+  summaryHistoryElement.innerHTML = "";
   CATEGORIES.forEach((category) => {
     const amount = totalsByCategory[category];
     const item = document.createElement("li");
@@ -189,6 +201,26 @@ function renderSummary(transactions) {
     item.append(categoryName, categoryAmount);
     categorySummaryElement.appendChild(item);
   });
+
+  transactions.slice(0, 5).forEach((transaction) => {
+    const item = document.createElement("li");
+    item.className = "flex justify-between rounded-md border border-slate-200 px-3 py-2 bg-white";
+    const left = document.createElement("span");
+    left.textContent = `${transaction.description} (${transaction.category})`;
+    const right = document.createElement("span");
+    right.className = "font-medium";
+    right.textContent = formatCurrency(transaction.amount);
+    item.append(left, right);
+    summaryHistoryElement.appendChild(item);
+  });
+
+  if (transactions.length === 0) {
+    const emptyItem = document.createElement("li");
+    emptyItem.className = "text-slate-500";
+    emptyItem.textContent = "No transaction history yet.";
+    summaryHistoryElement.appendChild(emptyItem);
+  }
+
 }
 
 function render() {
@@ -199,6 +231,7 @@ function render() {
 
 function bindEvents() {
   descriptionInput.addEventListener("input", () => {
+    setFormMessage("");
     const nextCategory = categorize(descriptionInput.value.trim());
     categoryPreview.textContent = `Category preview: ${nextCategory}`;
   });
@@ -210,8 +243,11 @@ function bindEvents() {
     const description = descriptionInput.value.trim();
 
     if (!Number.isFinite(amount) || amount <= 0 || !description) {
+      setFormMessage("Please enter a valid amount greater than 0 and a description.");
       return;
     }
+
+    setFormMessage("");
 
     const transaction = {
       id: generateTransactionId(),
@@ -226,6 +262,7 @@ function bindEvents() {
     saveTransactions(transactions);
 
     form.reset();
+    amountInput.focus();
     categoryPreview.textContent = "Category preview: Other";
     render();
   });
