@@ -12,7 +12,7 @@ const categoryKeywords = {
   Rent: ["rent", "apartment", "lease", "landlord"],
 };
 
-let state = { editingId: null };
+let state = { editingId: null, transactionMap: new Map() };
 let els = {};
 
 const $ = (id) => document.getElementById(id);
@@ -101,7 +101,9 @@ function renderSummary(txns) {
   });
 }
 
-function startEdit(txn) {
+function startEdit(txnId) {
+  const txn = state.transactionMap.get(txnId);
+  if (!txn) return;
   state.editingId = txn.id;
   els.amount.value = txn.amount;
   els.description.value = txn.description;
@@ -131,14 +133,17 @@ function renderTransactions(txns) {
     const left = document.createElement("div");
     left.innerHTML = `<p class="font-semibold text-lg">${formatCurrency(t.amount)}</p><p>${t.description}</p><p class="text-sm text-slate-500">Category: ${t.category}</p><p class="text-sm text-slate-500">${new Date(t.purchaseAt).toLocaleString()}</p>`;
     const actions = document.createElement("div"); actions.className = "flex gap-2";
-    const edit = document.createElement("button"); edit.type = "button"; edit.textContent = "Edit"; edit.className = "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"; edit.addEventListener("click", () => startEdit(t));
-    const del = document.createElement("button"); del.type = "button"; del.textContent = "Delete"; del.className = "rounded-lg bg-rose-600 px-3 py-2 text-white text-sm"; del.addEventListener("click", () => { saveTransactions(getTransactions().map(normalizeTransaction).filter((x) => x.id !== t.id)); if (state.editingId === t.id) stopEdit(); render(); });
+    const edit = document.createElement("button"); edit.type = "button"; edit.textContent = "Edit"; edit.className = "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"; edit.dataset.action = "edit";
+    edit.dataset.id = t.id;
+    const del = document.createElement("button"); del.type = "button"; del.textContent = "Delete"; del.className = "rounded-lg bg-rose-600 px-3 py-2 text-white text-sm"; del.dataset.action = "delete";
+    del.dataset.id = t.id;
     actions.append(edit, del); li.append(left, actions); els.transactionList.appendChild(li);
   });
 }
 
 function render() {
   const txns = sortedTxns(getTransactions().map(normalizeTransaction));
+  state.transactionMap = new Map(txns.map((txn) => [txn.id, txn]));
   renderTransactions(txns);
   renderSummary(txns);
 }
@@ -158,6 +163,24 @@ function bind() {
   els.sortOrderSelect.addEventListener("change", render);
   els.periodSelect.addEventListener("change", render);
   els.cancelEdit.addEventListener("click", stopEdit);
+
+  els.transactionList.addEventListener("click", (event) => {
+    const target = event.target.closest("button[data-action]");
+    if (!target) return;
+    const { action, id } = target.dataset;
+    if (!id) return;
+
+    if (action === "edit") {
+      startEdit(id);
+      return;
+    }
+
+    if (action === "delete") {
+      saveTransactions(getTransactions().map(normalizeTransaction).filter((x) => x.id !== id));
+      if (state.editingId === id) stopEdit();
+      render();
+    }
+  });
   $("open-advanced").addEventListener("click", () => { $("simple-mode").classList.add("hidden"); $("advanced-mode").classList.remove("hidden"); });
   $("back-simple").addEventListener("click", () => { $("advanced-mode").classList.add("hidden"); $("simple-mode").classList.remove("hidden"); });
 
@@ -173,7 +196,7 @@ function bind() {
       description,
       category: CATEGORIES.includes(els.category.value) ? els.category.value : categorize(description),
       purchaseAt: parsePurchaseDateTime(els.purchaseDate.value, els.purchaseTime.value),
-      createdAt: new Date().toISOString(),
+      createdAt: state.editingId ? (txns.find((t) => t.id === state.editingId)?.createdAt ?? new Date().toISOString()) : new Date().toISOString(),
     };
     const next = state.editingId ? txns.map((t) => (t.id === state.editingId ? { ...t, ...updated } : t)) : [...txns, updated];
     saveTransactions(next);
