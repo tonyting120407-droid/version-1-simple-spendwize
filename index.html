@@ -128,8 +128,16 @@
           <div id="fd-day-warning" class="hidden mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">You spent more than today’s planned budget.</div>
         </section>
 
-        <h4 class="font-semibold text-slate-700 mt-5 mb-3">Income, Taxes, Bills, and Goals</h4>
-        <section class="mt-5 rounded-lg border border-slate-200 p-4">
+        <section id="fd-details-section" class="mt-5 rounded-lg border border-slate-200 p-4">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h4 class="font-semibold text-slate-700">Income, Taxes, Bills, and Goals</h4>
+              <p class="text-sm text-slate-500 mt-1">Manage income sources, taxes, bills, subscriptions, savings goals, and deductions.</p>
+            </div>
+            <button id="fd-details-toggle" type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Show Details</button>
+          </div>
+          <div id="fd-details-content" class="hidden mt-4">
+        <section class="rounded-lg border border-slate-200 p-4">
           <div class="flex items-center justify-between gap-3 mb-3">
             <h4 class="font-semibold">Income Sources</h4>
             <button id="fd-add-income" type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">+ Add Income Source</button>
@@ -229,6 +237,8 @@
             </form>
           </div>
           <ul class="deduction-list space-y-2"></ul>
+        </section>
+          </div>
         </section>
       </section>
 
