@@ -2,6 +2,7 @@ const STORAGE_KEY = "spendwise_transactions";
 const CATEGORIES = ["Food", "Groceries", "Transportation", "Entertainment", "Electronics", "Bills", "Rent", "Other"];
 const PERIOD_FILTERS = ["daily", "weekly", "monthly", "yearly", "all"];
 const TREND_RANGES = ["week", "month", "year"];
+const DASHBOARD_STORAGE_KEY = "spendwise_dashboard_inputs";
 
 const categoryKeywords = {
   Food: ["coffee", "lunch", "dinner", "burger", "restaurant", "pizza", "meal"],
@@ -19,417 +20,118 @@ let trendChartRoot = null;
 
 const $ = (id) => document.getElementById(id);
 
-function getTransactions() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
+function getTransactions() { try { const raw = localStorage.getItem(STORAGE_KEY); const parsed = raw ? JSON.parse(raw) : []; return Array.isArray(parsed) ? parsed : []; } catch { return []; } }
 function saveTransactions(txns) { localStorage.setItem(STORAGE_KEY, JSON.stringify(txns)); }
+function generateTransactionId() { return (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`; }
+function formatCurrency(v) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v); }
+function toMoneyNumber(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
 
-function generateTransactionId() {
-  return (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function categorize(description) {
-  const text = description.toLowerCase();
-  for (const [category, keywords] of Object.entries(categoryKeywords)) {
-    if (keywords.some((k) => text.includes(k))) return category;
-  }
-  return "Other";
-}
-
-function parsePurchaseDateTime(dateStr, timeStr) {
-  const d = new Date(`${dateStr}T${timeStr || "00:00"}:00`);
-  return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
-}
-
-function splitDateTime(iso) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return { date: "", time: "" };
-  return { date: d.toISOString().slice(0, 10), time: d.toTimeString().slice(0, 5) };
-}
+function categorize(description) { const text = description.toLowerCase(); for (const [category, keywords] of Object.entries(categoryKeywords)) { if (keywords.some((k) => text.includes(k))) return category; } return "Other"; }
+function parsePurchaseDateTime(dateStr, timeStr) { const d = new Date(`${dateStr}T${timeStr || "00:00"}:00`); return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString(); }
+function splitDateTime(iso) { const d = new Date(iso); if (Number.isNaN(d.getTime())) return { date: "", time: "" }; return { date: d.toISOString().slice(0, 10), time: d.toTimeString().slice(0, 5) }; }
 
 function normalizeTransaction(t) {
   const fallback = typeof t.createdAt === "string" ? t.createdAt : new Date().toISOString();
   const purchaseRaw = typeof t.purchaseAt === "string" ? t.purchaseAt : fallback;
   const purchase = new Date(purchaseRaw);
-  return {
-    id: t.id ?? generateTransactionId(),
-    amount: Number.isFinite(Number(t.amount)) ? Number(t.amount) : 0,
-    description: typeof t.description === "string" ? t.description : "",
-    category: CATEGORIES.includes(t.category) ? t.category : "Other",
-    purchaseAt: Number.isNaN(purchase.getTime()) ? new Date().toISOString() : purchase.toISOString(),
-    createdAt: fallback,
-  };
+  return { id: t.id ?? generateTransactionId(), amount: Number.isFinite(Number(t.amount)) ? Number(t.amount) : 0, description: typeof t.description === "string" ? t.description : "", category: CATEGORIES.includes(t.category) ? t.category : "Other", purchaseAt: Number.isNaN(purchase.getTime()) ? new Date().toISOString() : purchase.toISOString(), createdAt: fallback };
 }
 
-function formatCurrency(v) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v); }
+function getDashboardInputs() {
+  try {
+    const raw = localStorage.getItem(DASHBOARD_STORAGE_KEY);
+    const p = raw ? JSON.parse(raw) : {};
+    return { salary: toMoneyNumber(p.salary), otherIncome: toMoneyNumber(p.otherIncome), taxAmount: toMoneyNumber(p.taxAmount), taxType: ["monthly", "yearly", "percentage"].includes(p.taxType) ? p.taxType : "monthly", fixedBills: toMoneyNumber(p.fixedBills), subscriptions: toMoneyNumber(p.subscriptions), savingsGoal: toMoneyNumber(p.savingsGoal), emergencyGoal: toMoneyNumber(p.emergencyGoal), otherDeductions: toMoneyNumber(p.otherDeductions) };
+  } catch { return { salary: 0, otherIncome: 0, taxAmount: 0, taxType: "monthly", fixedBills: 0, subscriptions: 0, savingsGoal: 0, emergencyGoal: 0, otherDeductions: 0 }; }
+}
+function saveDashboardInputs(v) { localStorage.setItem(DASHBOARD_STORAGE_KEY, JSON.stringify(v)); }
+
+function setDashboardFormValues(v) {
+  if (!els.fdForm) return;
+  els.fdSalary.value = v.salary || ""; els.fdOtherIncome.value = v.otherIncome || ""; els.fdTaxAmount.value = v.taxAmount || ""; els.fdTaxType.value = v.taxType;
+  els.fdFixedBills.value = v.fixedBills || ""; els.fdSubscriptions.value = v.subscriptions || ""; els.fdSavingsGoal.value = v.savingsGoal || ""; els.fdEmergencyGoal.value = v.emergencyGoal || ""; els.fdOtherDeductions.value = v.otherDeductions || "";
+}
+function getDashboardFormValues() { return { salary: toMoneyNumber(els.fdSalary?.value), otherIncome: toMoneyNumber(els.fdOtherIncome?.value), taxAmount: toMoneyNumber(els.fdTaxAmount?.value), taxType: els.fdTaxType?.value || "monthly", fixedBills: toMoneyNumber(els.fdFixedBills?.value), subscriptions: toMoneyNumber(els.fdSubscriptions?.value), savingsGoal: toMoneyNumber(els.fdSavingsGoal?.value), emergencyGoal: toMoneyNumber(els.fdEmergencyGoal?.value), otherDeductions: toMoneyNumber(els.fdOtherDeductions?.value) }; }
 
 function filterByPeriod(txns) {
   const period = PERIOD_FILTERS.includes(els.periodSelect.value) ? els.periodSelect.value : "all";
   if (period === "all") return txns;
   const now = new Date();
-  return txns.filter((t) => {
-    const d = new Date(t.purchaseAt);
-    if (period === "daily") return d.toDateString() === now.toDateString();
-    if (period === "weekly") return now.getTime() - d.getTime() <= 604800000 && now.getTime() >= d.getTime();
-    if (period === "monthly") return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-    return d.getFullYear() === now.getFullYear();
-  });
+  return txns.filter((t) => { const d = new Date(t.purchaseAt); if (period === "daily") return d.toDateString() === now.toDateString(); if (period === "weekly") return now.getTime() - d.getTime() <= 604800000 && now.getTime() >= d.getTime(); if (period === "monthly") return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); return d.getFullYear() === now.getFullYear(); });
 }
+function sortedTxns(txns) { const factor = els.sortOrderSelect.value === "oldest" ? 1 : -1; return [...txns].sort((a, b) => (new Date(a.purchaseAt) - new Date(b.purchaseAt)) * factor); }
+function renderSummary(txns) { const filtered = filterByPeriod(txns); els.totalSpent.textContent = formatCurrency(filtered.reduce((s, t) => s + t.amount, 0)); els.transactionCount.textContent = String(filtered.length); const totals = Object.fromEntries(CATEGORIES.map((c) => [c, 0])); filtered.forEach((t) => { totals[t.category] += t.amount; }); els.categorySummary.innerHTML = ""; CATEGORIES.forEach((c) => { const li = document.createElement("li"); li.className = "flex justify-between rounded-md border border-slate-200 px-3 py-2 bg-white"; li.textContent = `${c}: ${formatCurrency(totals[c])}`; els.categorySummary.appendChild(li); }); }
 
-function sortedTxns(txns) {
-  const factor = els.sortOrderSelect.value === "oldest" ? 1 : -1;
-  return [...txns].sort((a, b) => (new Date(a.purchaseAt) - new Date(b.purchaseAt)) * factor);
-}
-
-function renderSummary(txns) {
-  const filtered = filterByPeriod(txns);
-  els.totalSpent.textContent = formatCurrency(filtered.reduce((s, t) => s + t.amount, 0));
-  els.transactionCount.textContent = String(filtered.length);
-  const totals = Object.fromEntries(CATEGORIES.map((c) => [c, 0]));
-  filtered.forEach((t) => { totals[t.category] += t.amount; });
-  els.categorySummary.innerHTML = "";
-  CATEGORIES.forEach((c) => {
-    const li = document.createElement("li");
-    li.className = "flex justify-between rounded-md border border-slate-200 px-3 py-2 bg-white";
-    li.textContent = `${c}: ${formatCurrency(totals[c])}`;
-    els.categorySummary.appendChild(li);
-  });
-}
-
-function renderInlineEditCard(li, transaction) {
-  const dt = splitDateTime(transaction.purchaseAt);
-  li.innerHTML = `
-    <form class="w-full grid gap-3" data-inline-form="${transaction.id}">
-      <div class="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Amount ($)</label>
-          <input name="amount" type="number" min="0" step="0.01" required value="${transaction.amount}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Category</label>
-          <select name="category" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-            ${CATEGORIES.map((c) => `<option ${c === transaction.category ? "selected" : ""}>${c}</option>`).join("")}
-          </select>
-        </div>
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Description</label>
-        <input name="description" type="text" required value="${transaction.description.replace(/"/g, "&quot;")}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-      </div>
-      <div class="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Date of Purchase</label>
-          <input name="purchaseDate" type="date" required value="${dt.date}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Time of Purchase</label>
-          <input name="purchaseTime" type="time" required value="${dt.time}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </div>
-      </div>
-      <div class="flex flex-wrap gap-2">
-        <button type="submit" class="rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">Save Changes</button>
-        <button type="button" data-action="cancel-inline-edit" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">Cancel</button>
-        <button type="button" data-action="request-delete" data-id="${transaction.id}" class="rounded-lg bg-rose-600 px-3 py-2 text-white text-sm">Delete</button>
-      </div>
-    </form>
-  `;
-}
-
-
-function renderInlineDeleteConfirm(li, transaction) {
-  li.innerHTML = `
-    <div class="w-full rounded-lg border border-rose-200 bg-rose-50 p-4">
-      <p class="text-sm text-rose-800 font-medium">Are you sure you want to delete this transaction?</p>
-      <p class="text-xs text-rose-700 mt-1">${transaction.description} • ${formatCurrency(transaction.amount)}</p>
-      <div class="mt-3 flex gap-2">
-        <button type="button" data-action="confirm-delete" data-id="${transaction.id}" class="rounded-lg bg-rose-600 px-3 py-2 text-white text-sm">Confirm Delete</button>
-        <button type="button" data-action="cancel-delete" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">Cancel</button>
-      </div>
-    </div>
-  `;
-}
-
-function renderTransactions(txns) {
-  els.transactionList.innerHTML = "";
-  els.emptyState.style.display = txns.length ? "none" : "block";
-  txns.forEach((t) => {
-    const li = document.createElement("li");
-    li.className = "rounded-lg border border-slate-200 p-3 sm:p-4 bg-slate-50";
-
-    if (state.inlineEditingId === t.id) {
-      if (state.confirmDeleteId === t.id) {
-        renderInlineDeleteConfirm(li, t);
-      } else {
-        renderInlineEditCard(li, t);
-      }
-      els.transactionList.appendChild(li);
-      return;
-    }
-
-    const row = document.createElement("div");
-    row.className = "flex items-start justify-between gap-4";
-
-    const left = document.createElement("div");
-    left.innerHTML = `<p class="font-semibold text-lg">${formatCurrency(t.amount)}</p><p>${t.description}</p><p class="text-sm text-slate-500">Category: ${t.category}</p><p class="text-sm text-slate-500">${new Date(t.purchaseAt).toLocaleString()}</p>`;
-    const actions = document.createElement("div"); actions.className = "flex gap-2";
-    const edit = document.createElement("button");
-    edit.type = "button";
-    edit.textContent = "Edit";
-    edit.className = "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm";
-    edit.dataset.action = "edit";
-    edit.dataset.id = t.id;
-
-    actions.append(edit);
-    row.append(left, actions);
-    li.appendChild(row);
-    els.transactionList.appendChild(li);
-  });
-}
-
-function render() {
-  const txns = sortedTxns(getTransactions().map(normalizeTransaction));
-  state.transactionMap = new Map(txns.map((txn) => [txn.id, txn]));
-  renderTransactions(txns);
-  renderSummary(txns);
-  renderTrend(txns);
-}
-
-
-function buildTrendSeries(filteredTransactions, range) {
-  const spendingOnly = filteredTransactions
-    .map((t) => ({ ...t, amount: Number(t.amount), date: new Date(t.purchaseAt) }))
-    .filter((t) => Number.isFinite(t.amount) && t.amount > 0 && !Number.isNaN(t.date.getTime()));
-
-  if (spendingOnly.length === 0) return [];
-
+function renderFinancialDashboard(txns) {
+  if (!els.fdMonthlyIncome) return;
+  const i = getDashboardFormValues();
+  const income = i.salary + i.otherIncome;
+  const taxes = i.taxType === "yearly" ? i.taxAmount / 12 : i.taxType === "percentage" ? income * (i.taxAmount / 100) : i.taxAmount;
+  const deductions = taxes + i.fixedBills + i.subscriptions + i.savingsGoal + i.emergencyGoal + i.otherDeductions;
+  const expendable = income - deductions;
   const now = new Date();
-  const bucket = new Map();
+  const spentMonth = txns.filter((t) => { const d = new Date(t.purchaseAt); return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && t.amount > 0; }).reduce((s, t) => s + Number(t.amount), 0);
+  const remaining = expendable - spentMonth;
+  const daysLeft = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate() + 1;
+  const safe = daysLeft > 0 ? remaining / daysLeft : remaining;
+  els.fdMonthlyIncome.textContent = formatCurrency(income);
+  els.fdMonthlyExpendable.textContent = formatCurrency(expendable);
+  els.fdSpentMonth.textContent = formatCurrency(spentMonth);
+  els.fdRemaining.textContent = formatCurrency(remaining);
+  els.fdSafeToday.textContent = formatCurrency(safe);
+  els.fdRemaining.classList.toggle("text-rose-600", remaining < 0);
+  els.fdSafeWarning.classList.toggle("hidden", safe >= 0);
+}
 
-  if (range === "week") {
-    const day = now.getDay();
-    const start = new Date(now);
-    start.setDate(now.getDate() - day);
-    start.setHours(0, 0, 0, 0);
-
-    const labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    labels.forEach((label) => bucket.set(label, 0));
-
-    spendingOnly.forEach((t) => {
-      const d = t.date;
-      const diffDays = Math.floor((d - start) / 86400000);
-      if (diffDays >= 0 && diffDays < 7) {
-        const key = labels[d.getDay()];
-        bucket.set(key, (bucket.get(key) || 0) + t.amount);
-      }
-    });
-
-    return labels.map((label) => ({ label, amount: bucket.get(label) || 0 }));
-  }
-
-  if (range === "month") {
-    const y = now.getFullYear();
-    const m = now.getMonth();
-    const days = new Date(y, m + 1, 0).getDate();
-    for (let i = 1; i <= days; i += 1) bucket.set(String(i), 0);
-
-    spendingOnly.forEach((t) => {
-      const d = t.date;
-      if (d.getFullYear() === y && d.getMonth() === m) {
-        const key = String(d.getDate());
-        bucket.set(key, (bucket.get(key) || 0) + t.amount);
-      }
-    });
-
-    return Array.from(bucket, ([label, amount]) => ({ label, amount }));
-  }
-
-  const y = now.getFullYear();
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  months.forEach((month) => bucket.set(month, 0));
-
-  spendingOnly.forEach((t) => {
-    const d = t.date;
-    if (d.getFullYear() === y) {
-      const key = months[d.getMonth()];
-      bucket.set(key, (bucket.get(key) || 0) + t.amount);
-    }
-  });
-
-  return months.map((label) => ({ label, amount: bucket.get(label) || 0 }));
+function buildTrendSeries(txns, range) {
+  const spendingOnly = txns.map((t) => ({ amount: Number(t.amount), date: new Date(t.purchaseAt) })).filter((t) => Number.isFinite(t.amount) && t.amount > 0 && !Number.isNaN(t.date.getTime()));
+  if (!spendingOnly.length) return [];
+  const now = new Date(); const bucket = new Map();
+  if (range === "week") { const labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]; labels.forEach((l) => bucket.set(l, 0)); const start = new Date(now); start.setDate(now.getDate() - now.getDay()); start.setHours(0,0,0,0); spendingOnly.forEach((t) => { const diff = Math.floor((t.date - start)/86400000); if (diff>=0 && diff<7) { const key = labels[t.date.getDay()]; bucket.set(key, (bucket.get(key)||0)+t.amount); }}); return labels.map((label)=>({label, amount: bucket.get(label)||0})); }
+  if (range === "month") { const y=now.getFullYear(), m=now.getMonth(), days=new Date(y,m+1,0).getDate(); for(let d=1; d<=days; d++) bucket.set(String(d),0); spendingOnly.forEach((t)=>{ if(t.date.getFullYear()===y && t.date.getMonth()===m){ const k=String(t.date.getDate()); bucket.set(k,(bucket.get(k)||0)+t.amount); }}); return Array.from(bucket, ([label, amount])=>({label, amount})); }
+  const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; months.forEach((m)=>bucket.set(m,0)); spendingOnly.forEach((t)=>{ if(t.date.getFullYear()===now.getFullYear()){ const k=months[t.date.getMonth()]; bucket.set(k,(bucket.get(k)||0)+t.amount); }}); return months.map((label)=>({label, amount: bucket.get(label)||0}));
 }
 
 function renderTrend(txns) {
   const range = TREND_RANGES.includes(els.trendRangeSelect.value) ? els.trendRangeSelect.value : "week";
   const data = buildTrendSeries(txns, range).filter((d) => d.amount > 0);
-  const emptyEl = $("trend-empty");
-  const chartEl = $("trend-chart");
-
+  const emptyEl = $("trend-empty"), chartEl = $("trend-chart");
   if (!emptyEl || !chartEl || !window.Recharts || !window.React || !window.ReactDOM) return;
-
-  emptyEl.classList.toggle("hidden", data.length !== 0);
-  chartEl.classList.toggle("hidden", data.length === 0);
-
-  if (data.length === 0) {
-    if (trendChartRoot && trendChartRoot.unmount) {
-      trendChartRoot.unmount();
-      trendChartRoot = null;
-    }
-    return;
-  }
-
+  emptyEl.classList.toggle("hidden", data.length !== 0); chartEl.classList.toggle("hidden", data.length === 0);
+  if (!data.length) { if (trendChartRoot?.unmount) { trendChartRoot.unmount(); trendChartRoot = null; } return; }
   const { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } = window.Recharts;
   const e = window.React.createElement;
-
-  const chartNode = e(ResponsiveContainer, { width: "100%", height: "100%" },
-    e(AreaChart, { data, margin: { top: 12, right: 12, left: 4, bottom: 8 } },
-      e(CartesianGrid, { strokeDasharray: "3 3", stroke: "#e2e8f0" }),
-      e(XAxis, { dataKey: "label", tick: { fontSize: 12, fill: "#475569" } }),
-      e(YAxis, { tickFormatter: (v) => `$${Number(v).toFixed(0)}`, tick: { fontSize: 12, fill: "#475569" }, width: 56 }),
-      e(Tooltip, { formatter: (value) => formatCurrency(Number(value) || 0), labelStyle: { color: "#0f172a" } }),
-      e(Area, { type: "monotone", dataKey: "amount", stroke: "#2563eb", fill: "#93c5fd", fillOpacity: 0.35, strokeWidth: 3 })
-    )
-  );
-
-  if (typeof window.ReactDOM.createRoot === "function") {
-    if (!trendChartRoot) trendChartRoot = window.ReactDOM.createRoot(chartEl);
-    trendChartRoot.render(chartNode);
-  } else if (typeof window.ReactDOM.render === "function") {
-    window.ReactDOM.render(chartNode, chartEl);
-  }
+  const chartNode = e(ResponsiveContainer,{width:"100%",height:"100%"},e(AreaChart,{data,margin:{top:12,right:12,left:4,bottom:8}},e(CartesianGrid,{strokeDasharray:"3 3",stroke:"#e2e8f0"}),e(XAxis,{dataKey:"label",tick:{fontSize:12,fill:"#475569"}}),e(YAxis,{tickFormatter:(v)=>`$${Number(v).toFixed(0)}`,tick:{fontSize:12,fill:"#475569"},width:56}),e(Tooltip,{formatter:(v)=>formatCurrency(Number(v)||0),labelStyle:{color:"#0f172a"}}),e(Area,{type:"monotone",dataKey:"amount",stroke:"#2563eb",fill:"#93c5fd",fillOpacity:0.35,strokeWidth:3})));
+  if (typeof window.ReactDOM.createRoot === "function") { if (!trendChartRoot) trendChartRoot = window.ReactDOM.createRoot(chartEl); trendChartRoot.render(chartNode); } else if (typeof window.ReactDOM.render === "function") { window.ReactDOM.render(chartNode, chartEl); }
 }
 
-function setDefaultDateTime() {
-  const now = new Date();
-  els.purchaseDate.value = now.toISOString().slice(0, 10);
-  els.purchaseTime.value = now.toTimeString().slice(0, 5);
+function renderInlineEditCard(li, t) { const dt=splitDateTime(t.purchaseAt); li.innerHTML=`<form class="w-full grid gap-3" data-inline-form="${t.id}"><div class="grid gap-3 sm:grid-cols-2"><div><label class="block text-xs font-medium text-slate-600 mb-1">Amount ($)</label><input name="amount" type="number" min="0" step="0.01" required value="${t.amount}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div><div><label class="block text-xs font-medium text-slate-600 mb-1">Category</label><select name="category" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">${CATEGORIES.map((c)=>`<option ${c===t.category?"selected":""}>${c}</option>`).join("")}</select></div></div><div><label class="block text-xs font-medium text-slate-600 mb-1">Description</label><input name="description" type="text" required value="${t.description.replace(/"/g,"&quot;")}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div><div class="grid gap-3 sm:grid-cols-2"><div><label class="block text-xs font-medium text-slate-600 mb-1">Date of Purchase</label><input name="purchaseDate" type="date" required value="${dt.date}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div><div><label class="block text-xs font-medium text-slate-600 mb-1">Time of Purchase</label><input name="purchaseTime" type="time" required value="${dt.time}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div></div><div class="flex flex-wrap gap-2"><button type="submit" class="rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">Save Changes</button><button type="button" data-action="cancel-inline-edit" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">Cancel</button><button type="button" data-action="request-delete" data-id="${t.id}" class="rounded-lg bg-rose-600 px-3 py-2 text-white text-sm">Delete</button></div></form>`; }
+function renderInlineDeleteConfirm(li, t) { li.innerHTML=`<div class="w-full rounded-lg border border-rose-200 bg-rose-50 p-4"><p class="text-sm text-rose-800 font-medium">Are you sure you want to delete this transaction?</p><p class="text-xs text-rose-700 mt-1">${t.description} • ${formatCurrency(t.amount)}</p><div class="mt-3 flex gap-2"><button type="button" data-action="confirm-delete" data-id="${t.id}" class="rounded-lg bg-rose-600 px-3 py-2 text-white text-sm">Confirm Delete</button><button type="button" data-action="cancel-delete" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">Cancel</button></div></div>`; }
+function renderTransactions(txns){ els.transactionList.innerHTML=""; els.emptyState.style.display=txns.length?"none":"block"; txns.forEach((t)=>{ const li=document.createElement("li"); li.className="rounded-lg border border-slate-200 p-3 sm:p-4 bg-slate-50"; if(state.inlineEditingId===t.id){ state.confirmDeleteId===t.id?renderInlineDeleteConfirm(li,t):renderInlineEditCard(li,t); els.transactionList.appendChild(li); return;} const row=document.createElement("div"); row.className="flex items-start justify-between gap-4"; const left=document.createElement("div"); left.innerHTML=`<p class="font-semibold text-lg">${formatCurrency(t.amount)}</p><p>${t.description}</p><p class="text-sm text-slate-500">Category: ${t.category}</p><p class="text-sm text-slate-500">${new Date(t.purchaseAt).toLocaleString()}</p>`; const actions=document.createElement("div"); actions.className="flex gap-2"; const edit=document.createElement("button"); edit.type="button"; edit.textContent="Edit"; edit.className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"; edit.dataset.action="edit"; edit.dataset.id=t.id; actions.append(edit); row.append(left,actions); li.appendChild(row); els.transactionList.appendChild(li); }); }
+
+function render(){ const txns=sortedTxns(getTransactions().map(normalizeTransaction)); state.transactionMap=new Map(txns.map((t)=>[t.id,t])); renderTransactions(txns); renderSummary(txns); renderTrend(txns); renderFinancialDashboard(txns); }
+function setDefaultDateTime(){ const now=new Date(); els.purchaseDate.value=now.toISOString().slice(0,10); els.purchaseTime.value=now.toTimeString().slice(0,5); }
+
+function bind(){
+  els.description.addEventListener("input",()=>{ const c=categorize(els.description.value.trim()); els.categoryPreview.textContent=`Category preview: ${c}`; els.category.value=c; });
+  els.sortOrderSelect.addEventListener("change",render); els.periodSelect.addEventListener("change",render); els.trendRangeSelect.addEventListener("change",render);
+  if (els.fdForm) { els.fdForm.addEventListener("input",()=>{ const v=getDashboardFormValues(); saveDashboardInputs(v); render(); }); }
+
+  els.transactionList.addEventListener("click",(event)=>{ const button=event.target.closest("button[data-action]"); if(!button) return; const {action,id}=button.dataset; if(action==="edit"&&id){ state.inlineEditingId=id; state.confirmDeleteId=null; render(); return;} if(action==="cancel-inline-edit"){ state.inlineEditingId=null; state.confirmDeleteId=null; render(); return;} if(action==="request-delete"&&id){ state.confirmDeleteId=id; render(); return;} if(action==="cancel-delete"){ state.confirmDeleteId=null; render(); return;} if(action==="confirm-delete"&&id){ saveTransactions(getTransactions().map(normalizeTransaction).filter((x)=>x.id!==id)); state.inlineEditingId=null; state.confirmDeleteId=null; render(); }});
+
+  els.transactionList.addEventListener("submit",(event)=>{ const f=event.target.closest("form[data-inline-form]"); if(!f) return; event.preventDefault(); const id=f.dataset.inlineForm; const existing=state.transactionMap.get(id); if(!existing) return; const fd=new FormData(f); const amount=Number(fd.get("amount")); const description=String(fd.get("description")||"").trim(); const category=String(fd.get("category")||"Other"); const purchaseDate=String(fd.get("purchaseDate")||""); const purchaseTime=String(fd.get("purchaseTime")||""); if(!Number.isFinite(amount)||amount<=0||!description) return; const updated={...existing, amount, description, category:CATEGORIES.includes(category)?category:categorize(description), purchaseAt:parsePurchaseDateTime(purchaseDate,purchaseTime)}; saveTransactions(getTransactions().map(normalizeTransaction).map((t)=>t.id===id?updated:t)); state.inlineEditingId=null; state.confirmDeleteId=null; render(); });
+
+  $("open-advanced").addEventListener("click",()=>{$("simple-mode").classList.add("hidden"); $("advanced-mode").classList.remove("hidden");});
+  $("back-simple").addEventListener("click",()=>{$("advanced-mode").classList.add("hidden"); $("simple-mode").classList.remove("hidden");});
+
+  els.form.addEventListener("submit",(e)=>{ e.preventDefault(); const amount=Number(els.amount.value); const description=els.description.value.trim(); if(!Number.isFinite(amount)||amount<=0||!description) return; const txns=getTransactions().map(normalizeTransaction); txns.push({id:generateTransactionId(), amount, description, category:CATEGORIES.includes(els.category.value)?els.category.value:categorize(description), purchaseAt:parsePurchaseDateTime(els.purchaseDate.value,els.purchaseTime.value), createdAt:new Date().toISOString()}); saveTransactions(txns); els.form.reset(); setDefaultDateTime(); els.categoryPreview.textContent="Category preview: Other"; els.amount.focus(); render(); });
 }
 
-function bind() {
-  els.description.addEventListener("input", () => {
-    const c = categorize(els.description.value.trim());
-    els.categoryPreview.textContent = `Category preview: ${c}`;
-    els.category.value = c;
-  });
-
-  els.sortOrderSelect.addEventListener("change", render);
-  els.periodSelect.addEventListener("change", render);
-  els.trendRangeSelect.addEventListener("change", render);
-
-  els.transactionList.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-action]");
-    if (!button) return;
-    const { action, id } = button.dataset;
-
-    if (action === "edit" && id) {
-      state.inlineEditingId = id;
-      state.confirmDeleteId = null;
-      render();
-      return;
-    }
-
-    if (action === "cancel-inline-edit") {
-      state.inlineEditingId = null;
-      state.confirmDeleteId = null;
-      render();
-      return;
-    }
-
-    if (action === "request-delete" && id) {
-      state.confirmDeleteId = id;
-      render();
-      return;
-    }
-
-    if (action === "cancel-delete") {
-      state.confirmDeleteId = null;
-      render();
-      return;
-    }
-
-    if (action === "confirm-delete" && id) {
-      saveTransactions(getTransactions().map(normalizeTransaction).filter((x) => x.id !== id));
-      state.inlineEditingId = null;
-      state.confirmDeleteId = null;
-      render();
-    }
-  });
-
-  els.transactionList.addEventListener("submit", (event) => {
-    const inlineForm = event.target.closest("form[data-inline-form]");
-    if (!inlineForm) return;
-    event.preventDefault();
-
-    const id = inlineForm.dataset.inlineForm;
-    const existing = state.transactionMap.get(id);
-    if (!existing) return;
-
-    const formData = new FormData(inlineForm);
-    const amount = Number(formData.get("amount"));
-    const description = String(formData.get("description") || "").trim();
-    const category = String(formData.get("category") || "Other");
-    const purchaseDate = String(formData.get("purchaseDate") || "");
-    const purchaseTime = String(formData.get("purchaseTime") || "");
-
-    if (!Number.isFinite(amount) || amount <= 0 || !description) return;
-
-    const updated = {
-      ...existing,
-      amount,
-      description,
-      category: CATEGORIES.includes(category) ? category : categorize(description),
-      purchaseAt: parsePurchaseDateTime(purchaseDate, purchaseTime),
-    };
-
-    const txns = getTransactions().map(normalizeTransaction).map((t) => (t.id === id ? updated : t));
-    saveTransactions(txns);
-    state.inlineEditingId = null;
-    state.confirmDeleteId = null;
-    render();
-  });
-
-  $("open-advanced").addEventListener("click", () => { $("simple-mode").classList.add("hidden"); $("advanced-mode").classList.remove("hidden"); });
-  $("back-simple").addEventListener("click", () => { $("advanced-mode").classList.add("hidden"); $("simple-mode").classList.remove("hidden"); });
-
-  els.form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const amount = Number(els.amount.value);
-    const description = els.description.value.trim();
-    if (!Number.isFinite(amount) || amount <= 0 || !description) return;
-
-    const txns = getTransactions().map(normalizeTransaction);
-    const next = [...txns, {
-      id: generateTransactionId(),
-      amount,
-      description,
-      category: CATEGORIES.includes(els.category.value) ? els.category.value : categorize(description),
-      purchaseAt: parsePurchaseDateTime(els.purchaseDate.value, els.purchaseTime.value),
-      createdAt: new Date().toISOString(),
-    }];
-
-    saveTransactions(next);
-    els.form.reset();
-    setDefaultDateTime();
-    els.categoryPreview.textContent = "Category preview: Other";
-    els.amount.focus();
-    render();
-  });
-}
-
-function init() {
-  els = {
-    form: $("transaction-form"), amount: $("amount"), description: $("description"), category: $("category"), purchaseDate: $("purchase-date"), purchaseTime: $("purchase-time"), categoryPreview: $("category-preview"), transactionList: $("transaction-list"), emptyState: $("empty-state"), totalSpent: $("total-spent"), transactionCount: $("transaction-count"), categorySummary: $("category-summary"), sortOrderSelect: $("sort-order"), periodSelect: $("summary-period"), trendRangeSelect: $("trend-range")
-  };
-  if (Object.values(els).some((v) => !v)) return;
-  setDefaultDateTime();
-  bind();
-  render();
+function init(){
+  els={ form:$("transaction-form"), amount:$("amount"), description:$("description"), category:$("category"), purchaseDate:$("purchase-date"), purchaseTime:$("purchase-time"), categoryPreview:$("category-preview"), transactionList:$("transaction-list"), emptyState:$("empty-state"), totalSpent:$("total-spent"), transactionCount:$("transaction-count"), categorySummary:$("category-summary"), sortOrderSelect:$("sort-order"), periodSelect:$("summary-period"), trendRangeSelect:$("trend-range"), fdForm:$("fd-form"), fdSalary:$("fd-salary"), fdOtherIncome:$("fd-other-income"), fdTaxAmount:$("fd-tax-amount"), fdTaxType:$("fd-tax-type"), fdFixedBills:$("fd-fixed-bills"), fdSubscriptions:$("fd-subscriptions"), fdSavingsGoal:$("fd-savings-goal"), fdEmergencyGoal:$("fd-emergency-goal"), fdOtherDeductions:$("fd-other-deductions"), fdMonthlyIncome:$("fd-monthly-income"), fdMonthlyExpendable:$("fd-monthly-expendable"), fdSpentMonth:$("fd-spent-month"), fdRemaining:$("fd-remaining"), fdSafeToday:$("fd-safe-today"), fdSafeWarning:$("fd-safe-warning") };
+  const required=[els.form,els.amount,els.description,els.category,els.purchaseDate,els.purchaseTime,els.categoryPreview,els.transactionList,els.emptyState,els.totalSpent,els.transactionCount,els.categorySummary,els.sortOrderSelect,els.periodSelect,els.trendRangeSelect];
+  if(required.some((v)=>!v)) return;
+  setDefaultDateTime(); setDashboardFormValues(getDashboardInputs()); bind(); render();
 }
 
 init();
