@@ -72,9 +72,19 @@
 
 
       <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6">
-        <h2 class="text-xl font-semibold mb-4">Spending Trend</h2>
-        <div id="trend-empty" class="hidden text-slate-500">No spending data for this period yet.</div>
-        <div id="trend-chart" class="h-72 w-full"></div>
+        <div class="flex items-center justify-between mb-4 gap-3">
+          <h2 class="text-xl font-semibold">Spending Trend</h2>
+          <div>
+            <label for="trend-range" class="block text-xs font-medium text-slate-600 mb-1">Range</label>
+            <select id="trend-range" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <option value="week" selected>Week</option>
+              <option value="month">Month</option>
+              <option value="year">Year</option>
+            </select>
+          </div>
+        </div>
+        <div id="trend-empty" class="hidden text-slate-500">No spending data for this range yet.</div>
+        <div id="trend-chart" class="h-[300px] w-full"></div>
       </section>
 
       <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6">

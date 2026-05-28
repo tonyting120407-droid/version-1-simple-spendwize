@@ -1,6 +1,7 @@
 const STORAGE_KEY = "spendwise_transactions";
 const CATEGORIES = ["Food", "Groceries", "Transportation", "Entertainment", "Electronics", "Bills", "Rent", "Other"];
 const PERIOD_FILTERS = ["daily", "weekly", "monthly", "yearly", "all"];
+const TREND_RANGES = ["week", "month", "year"];
 
 const categoryKeywords = {
   Food: ["coffee", "lunch", "dinner", "burger", "restaurant", "pizza", "meal"],
@@ -201,81 +202,72 @@ function render() {
 }
 
 
-function buildTrendSeries(filteredTransactions, period) {
-  const spendingOnly = filteredTransactions.filter((t) => t.amount > 0);
+function buildTrendSeries(filteredTransactions, range) {
+  const spendingOnly = filteredTransactions
+    .map((t) => ({ ...t, amount: Number(t.amount), date: new Date(t.purchaseAt) }))
+    .filter((t) => Number.isFinite(t.amount) && t.amount > 0 && !Number.isNaN(t.date.getTime()));
+
   if (spendingOnly.length === 0) return [];
 
   const now = new Date();
-  const weekdayOrder = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const bucket = new Map();
 
-  if (period === "daily") {
-    for (let h = 0; h < 24; h += 1) {
-      bucket.set(`${String(h).padStart(2, "0")}:00`, 0);
-    }
+  if (range === "week") {
+    const day = now.getDay();
+    const start = new Date(now);
+    start.setDate(now.getDate() - day);
+    start.setHours(0, 0, 0, 0);
+
+    const labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    labels.forEach((label) => bucket.set(label, 0));
+
     spendingOnly.forEach((t) => {
-      const d = new Date(t.purchaseAt);
-      if (Number.isNaN(d.getTime())) return;
-      const key = `${String(d.getHours()).padStart(2, "0")}:00`;
-      bucket.set(key, (bucket.get(key) || 0) + t.amount);
+      const d = t.date;
+      const diffDays = Math.floor((d - start) / 86400000);
+      if (diffDays >= 0 && diffDays < 7) {
+        const key = labels[d.getDay()];
+        bucket.set(key, (bucket.get(key) || 0) + t.amount);
+      }
     });
+
+    return labels.map((label) => ({ label, amount: bucket.get(label) || 0 }));
+  }
+
+  if (range === "month") {
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const days = new Date(y, m + 1, 0).getDate();
+    for (let i = 1; i <= days; i += 1) bucket.set(String(i), 0);
+
+    spendingOnly.forEach((t) => {
+      const d = t.date;
+      if (d.getFullYear() === y && d.getMonth() === m) {
+        const key = String(d.getDate());
+        bucket.set(key, (bucket.get(key) || 0) + t.amount);
+      }
+    });
+
     return Array.from(bucket, ([label, amount]) => ({ label, amount }));
   }
 
-  if (period === "weekly") {
-    weekdayOrder.forEach((day) => bucket.set(day, 0));
-    spendingOnly.forEach((t) => {
-      const d = new Date(t.purchaseAt);
-      if (Number.isNaN(d.getTime())) return;
-      const key = weekdayOrder[d.getDay()];
-      bucket.set(key, (bucket.get(key) || 0) + t.amount);
-    });
-    return weekdayOrder.map((label) => ({ label, amount: bucket.get(label) || 0 }));
-  }
-
-  if (period === "monthly") {
-    const year = now.getFullYear();
-    const month = now.getMonth();
-    const days = new Date(year, month + 1, 0).getDate();
-    for (let day = 1; day <= days; day += 1) bucket.set(String(day), 0);
-
-    spendingOnly.forEach((t) => {
-      const d = new Date(t.purchaseAt);
-      if (Number.isNaN(d.getTime())) return;
-      const key = String(d.getDate());
-      bucket.set(key, (bucket.get(key) || 0) + t.amount);
-    });
-    return Array.from(bucket, ([label, amount]) => ({ label, amount }));
-  }
-
-  if (period === "yearly") {
-    monthOrder.forEach((m) => bucket.set(m, 0));
-    spendingOnly.forEach((t) => {
-      const d = new Date(t.purchaseAt);
-      if (Number.isNaN(d.getTime())) return;
-      const key = monthOrder[d.getMonth()];
-      bucket.set(key, (bucket.get(key) || 0) + t.amount);
-    });
-    return monthOrder.map((label) => ({ label, amount: bucket.get(label) || 0 }));
-  }
+  const y = now.getFullYear();
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  months.forEach((month) => bucket.set(month, 0));
 
   spendingOnly.forEach((t) => {
-    const d = new Date(t.purchaseAt);
-    if (Number.isNaN(d.getTime())) return;
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    bucket.set(key, (bucket.get(key) || 0) + t.amount);
+    const d = t.date;
+    if (d.getFullYear() === y) {
+      const key = months[d.getMonth()];
+      bucket.set(key, (bucket.get(key) || 0) + t.amount);
+    }
   });
 
-  return Array.from(bucket.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([label, amount]) => ({ label, amount }));
+  return months.map((label) => ({ label, amount: bucket.get(label) || 0 }));
 }
 
 function renderTrend(txns) {
-  const period = PERIOD_FILTERS.includes(els.periodSelect.value) ? els.periodSelect.value : "all";
-  const filtered = filterByPeriod(txns);
-  const data = buildTrendSeries(filtered, period).filter((d) => d.amount > 0);
+  const range = TREND_RANGES.includes(els.trendRangeSelect.value) ? els.trendRangeSelect.value : "week";
+  const data = buildTrendSeries(txns, range).filter((d) => d.amount > 0);
   const emptyEl = $("trend-empty");
   const chartEl = $("trend-chart");
 
@@ -328,6 +320,7 @@ function bind() {
 
   els.sortOrderSelect.addEventListener("change", render);
   els.periodSelect.addEventListener("change", render);
+  els.trendRangeSelect.addEventListener("change", render);
 
   els.transactionList.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-action]");
@@ -431,7 +424,7 @@ function bind() {
 
 function init() {
   els = {
-    form: $("transaction-form"), amount: $("amount"), description: $("description"), category: $("category"), purchaseDate: $("purchase-date"), purchaseTime: $("purchase-time"), categoryPreview: $("category-preview"), transactionList: $("transaction-list"), emptyState: $("empty-state"), totalSpent: $("total-spent"), transactionCount: $("transaction-count"), categorySummary: $("category-summary"), sortOrderSelect: $("sort-order"), periodSelect: $("summary-period")
+    form: $("transaction-form"), amount: $("amount"), description: $("description"), category: $("category"), purchaseDate: $("purchase-date"), purchaseTime: $("purchase-time"), categoryPreview: $("category-preview"), transactionList: $("transaction-list"), emptyState: $("empty-state"), totalSpent: $("total-spent"), transactionCount: $("transaction-count"), categorySummary: $("category-summary"), sortOrderSelect: $("sort-order"), periodSelect: $("summary-period"), trendRangeSelect: $("trend-range")
   };
   if (Object.values(els).some((v) => !v)) return;
   setDefaultDateTime();
