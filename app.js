@@ -14,6 +14,7 @@ const categoryKeywords = {
 
 let state = { inlineEditingId: null, confirmDeleteId: null, transactionMap: new Map() };
 let els = {};
+let trendChartRoot = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -196,6 +197,69 @@ function render() {
   state.transactionMap = new Map(txns.map((txn) => [txn.id, txn]));
   renderTransactions(txns);
   renderSummary(txns);
+  renderTrend(txns);
+}
+
+
+function getTrendBucketKey(date, period, rangeMonths) {
+  if (period === "daily") return date.toLocaleTimeString([], { hour: "2-digit", minute: "00", hour12: false });
+  if (period === "weekly") return date.toLocaleDateString([], { weekday: "short" });
+  if (period === "monthly") return `${date.getMonth() + 1}/${date.getDate()}`;
+  if (period === "yearly") return date.toLocaleDateString([], { month: "short" });
+  if (rangeMonths > 24) return String(date.getFullYear());
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getTrendData(filteredTransactions, period) {
+  const spendingOnly = filteredTransactions.filter((t) => t.amount > 0);
+  const dates = spendingOnly.map((t) => new Date(t.purchaseAt)).filter((d) => !Number.isNaN(d.getTime()));
+  const min = dates.length ? new Date(Math.min(...dates.map((d) => d.getTime()))) : new Date();
+  const max = dates.length ? new Date(Math.max(...dates.map((d) => d.getTime()))) : new Date();
+  const rangeMonths = (max.getFullYear() - min.getFullYear()) * 12 + (max.getMonth() - min.getMonth());
+  const map = new Map();
+
+  spendingOnly.forEach((t) => {
+    const d = new Date(t.purchaseAt);
+    if (Number.isNaN(d.getTime())) return;
+    const key = getTrendBucketKey(d, period, rangeMonths);
+    map.set(key, (map.get(key) || 0) + t.amount);
+  });
+
+  return Array.from(map.entries()).map(([label, amount]) => ({ label, amount })).sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function renderTrend(txns) {
+  const period = PERIOD_FILTERS.includes(els.periodSelect.value) ? els.periodSelect.value : "all";
+  const filtered = filterByPeriod(txns);
+  const data = getTrendData(filtered, period);
+  const emptyEl = $("trend-empty");
+  const chartEl = $("trend-chart");
+
+  if (!emptyEl || !chartEl || !window.Recharts || !window.React || !window.ReactDOM) return;
+
+  emptyEl.classList.toggle("hidden", data.length !== 0);
+  chartEl.classList.toggle("hidden", data.length === 0);
+
+  if (data.length === 0) return;
+
+  if (!trendChartRoot) {
+    trendChartRoot = window.ReactDOM.createRoot(chartEl);
+  }
+
+  const { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } = window.Recharts;
+  const e = window.React.createElement;
+
+  trendChartRoot.render(
+    e(ResponsiveContainer, { width: "100%", height: "100%" },
+      e(LineChart, { data, margin: { top: 8, right: 12, left: 0, bottom: 8 } },
+        e(CartesianGrid, { strokeDasharray: "3 3" }),
+        e(XAxis, { dataKey: "label", tick: { fontSize: 12 } }),
+        e(YAxis, { tickFormatter: (v) => `$${v}`, tick: { fontSize: 12 } }),
+        e(Tooltip, { formatter: (value) => formatCurrency(value) }),
+        e(Line, { type: "monotone", dataKey: "amount", stroke: "#2563eb", strokeWidth: 2, dot: false })
+      )
+    )
+  );
 }
 
 function setDefaultDateTime() {
