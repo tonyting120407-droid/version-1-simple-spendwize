@@ -201,37 +201,81 @@ function render() {
 }
 
 
-function getTrendBucketKey(date, period, rangeMonths) {
-  if (period === "daily") return date.toLocaleTimeString([], { hour: "2-digit", minute: "00", hour12: false });
-  if (period === "weekly") return date.toLocaleDateString([], { weekday: "short" });
-  if (period === "monthly") return `${date.getMonth() + 1}/${date.getDate()}`;
-  if (period === "yearly") return date.toLocaleDateString([], { month: "short" });
-  if (rangeMonths > 24) return String(date.getFullYear());
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function getTrendData(filteredTransactions, period) {
+function buildTrendSeries(filteredTransactions, period) {
   const spendingOnly = filteredTransactions.filter((t) => t.amount > 0);
-  const dates = spendingOnly.map((t) => new Date(t.purchaseAt)).filter((d) => !Number.isNaN(d.getTime()));
-  const min = dates.length ? new Date(Math.min(...dates.map((d) => d.getTime()))) : new Date();
-  const max = dates.length ? new Date(Math.max(...dates.map((d) => d.getTime()))) : new Date();
-  const rangeMonths = (max.getFullYear() - min.getFullYear()) * 12 + (max.getMonth() - min.getMonth());
-  const map = new Map();
+  if (spendingOnly.length === 0) return [];
+
+  const now = new Date();
+  const weekdayOrder = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const bucket = new Map();
+
+  if (period === "daily") {
+    for (let h = 0; h < 24; h += 1) {
+      bucket.set(`${String(h).padStart(2, "0")}:00`, 0);
+    }
+    spendingOnly.forEach((t) => {
+      const d = new Date(t.purchaseAt);
+      if (Number.isNaN(d.getTime())) return;
+      const key = `${String(d.getHours()).padStart(2, "0")}:00`;
+      bucket.set(key, (bucket.get(key) || 0) + t.amount);
+    });
+    return Array.from(bucket, ([label, amount]) => ({ label, amount }));
+  }
+
+  if (period === "weekly") {
+    weekdayOrder.forEach((day) => bucket.set(day, 0));
+    spendingOnly.forEach((t) => {
+      const d = new Date(t.purchaseAt);
+      if (Number.isNaN(d.getTime())) return;
+      const key = weekdayOrder[d.getDay()];
+      bucket.set(key, (bucket.get(key) || 0) + t.amount);
+    });
+    return weekdayOrder.map((label) => ({ label, amount: bucket.get(label) || 0 }));
+  }
+
+  if (period === "monthly") {
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const days = new Date(year, month + 1, 0).getDate();
+    for (let day = 1; day <= days; day += 1) bucket.set(String(day), 0);
+
+    spendingOnly.forEach((t) => {
+      const d = new Date(t.purchaseAt);
+      if (Number.isNaN(d.getTime())) return;
+      const key = String(d.getDate());
+      bucket.set(key, (bucket.get(key) || 0) + t.amount);
+    });
+    return Array.from(bucket, ([label, amount]) => ({ label, amount }));
+  }
+
+  if (period === "yearly") {
+    monthOrder.forEach((m) => bucket.set(m, 0));
+    spendingOnly.forEach((t) => {
+      const d = new Date(t.purchaseAt);
+      if (Number.isNaN(d.getTime())) return;
+      const key = monthOrder[d.getMonth()];
+      bucket.set(key, (bucket.get(key) || 0) + t.amount);
+    });
+    return monthOrder.map((label) => ({ label, amount: bucket.get(label) || 0 }));
+  }
 
   spendingOnly.forEach((t) => {
     const d = new Date(t.purchaseAt);
     if (Number.isNaN(d.getTime())) return;
-    const key = getTrendBucketKey(d, period, rangeMonths);
-    map.set(key, (map.get(key) || 0) + t.amount);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    bucket.set(key, (bucket.get(key) || 0) + t.amount);
   });
 
-  return Array.from(map.entries()).map(([label, amount]) => ({ label, amount })).sort((a, b) => a.label.localeCompare(b.label));
+  return Array.from(bucket.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([label, amount]) => ({ label, amount }));
 }
 
 function renderTrend(txns) {
   const period = PERIOD_FILTERS.includes(els.periodSelect.value) ? els.periodSelect.value : "all";
   const filtered = filterByPeriod(txns);
-  const data = getTrendData(filtered, period);
+  const data = buildTrendSeries(filtered, period).filter((d) => d.amount > 0);
   const emptyEl = $("trend-empty");
   const chartEl = $("trend-chart");
 
@@ -240,26 +284,33 @@ function renderTrend(txns) {
   emptyEl.classList.toggle("hidden", data.length !== 0);
   chartEl.classList.toggle("hidden", data.length === 0);
 
-  if (data.length === 0) return;
-
-  if (!trendChartRoot) {
-    trendChartRoot = window.ReactDOM.createRoot(chartEl);
+  if (data.length === 0) {
+    if (trendChartRoot && trendChartRoot.unmount) {
+      trendChartRoot.unmount();
+      trendChartRoot = null;
+    }
+    return;
   }
 
-  const { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } = window.Recharts;
+  const { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } = window.Recharts;
   const e = window.React.createElement;
 
-  trendChartRoot.render(
-    e(ResponsiveContainer, { width: "100%", height: "100%" },
-      e(LineChart, { data, margin: { top: 8, right: 12, left: 0, bottom: 8 } },
-        e(CartesianGrid, { strokeDasharray: "3 3" }),
-        e(XAxis, { dataKey: "label", tick: { fontSize: 12 } }),
-        e(YAxis, { tickFormatter: (v) => `$${v}`, tick: { fontSize: 12 } }),
-        e(Tooltip, { formatter: (value) => formatCurrency(value) }),
-        e(Line, { type: "monotone", dataKey: "amount", stroke: "#2563eb", strokeWidth: 2, dot: false })
-      )
+  const chartNode = e(ResponsiveContainer, { width: "100%", height: "100%" },
+    e(AreaChart, { data, margin: { top: 12, right: 12, left: 4, bottom: 8 } },
+      e(CartesianGrid, { strokeDasharray: "3 3", stroke: "#e2e8f0" }),
+      e(XAxis, { dataKey: "label", tick: { fontSize: 12, fill: "#475569" } }),
+      e(YAxis, { tickFormatter: (v) => `$${Number(v).toFixed(0)}`, tick: { fontSize: 12, fill: "#475569" }, width: 56 }),
+      e(Tooltip, { formatter: (value) => formatCurrency(Number(value) || 0), labelStyle: { color: "#0f172a" } }),
+      e(Area, { type: "monotone", dataKey: "amount", stroke: "#2563eb", fill: "#93c5fd", fillOpacity: 0.35, strokeWidth: 3 })
     )
   );
+
+  if (typeof window.ReactDOM.createRoot === "function") {
+    if (!trendChartRoot) trendChartRoot = window.ReactDOM.createRoot(chartEl);
+    trendChartRoot.render(chartNode);
+  } else if (typeof window.ReactDOM.render === "function") {
+    window.ReactDOM.render(chartNode, chartEl);
+  }
 }
 
 function setDefaultDateTime() {
