@@ -15,218 +15,84 @@ const categoryKeywords = {
   Rent: ["rent", "apartment", "lease", "landlord"],
 };
 
-let state = { inlineEditingId: null, confirmDeleteId: null, transactionMap: new Map() };
+let state = { inlineEditingId: null, confirmDeleteId: null, incomeEditingId: null, incomeConfirmDeleteId: null, transactionMap: new Map() };
 let els = {};
 let trendChartRoot = null;
-
 const $ = (id) => document.getElementById(id);
 
-function getTransactions() { try { const raw = localStorage.getItem(STORAGE_KEY); const parsed = raw ? JSON.parse(raw) : []; return Array.isArray(parsed) ? parsed : []; } catch { return []; } }
+const toMoneyNumber = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+const formatCurrency = (v) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
+const generateTransactionId = () => (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+function getTransactions() { try { const r = localStorage.getItem(STORAGE_KEY); const p = r ? JSON.parse(r) : []; return Array.isArray(p) ? p : []; } catch { return []; } }
 function saveTransactions(txns) { localStorage.setItem(STORAGE_KEY, JSON.stringify(txns)); }
-function generateTransactionId() { return (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`; }
-function formatCurrency(v) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v); }
-function toMoneyNumber(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
-
-function categorize(description) { const text = description.toLowerCase(); for (const [category, keywords] of Object.entries(categoryKeywords)) { if (keywords.some((k) => text.includes(k))) return category; } return "Other"; }
-function parsePurchaseDateTime(dateStr, timeStr) { const d = new Date(`${dateStr}T${timeStr || "00:00"}:00`); return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString(); }
+function categorize(description) { const text = description.toLowerCase(); for (const [c, ks] of Object.entries(categoryKeywords)) if (ks.some((k) => text.includes(k))) return c; return "Other"; }
+function parsePurchaseDateTime(d, t) { const x = new Date(`${d}T${t || "00:00"}:00`); return Number.isNaN(x.getTime()) ? new Date().toISOString() : x.toISOString(); }
 function splitDateTime(iso) { const d = new Date(iso); if (Number.isNaN(d.getTime())) return { date: "", time: "" }; return { date: d.toISOString().slice(0, 10), time: d.toTimeString().slice(0, 5) }; }
+function normalizeTransaction(t) { const fb = typeof t.createdAt === "string" ? t.createdAt : new Date().toISOString(); const pr = typeof t.purchaseAt === "string" ? t.purchaseAt : fb; const d = new Date(pr); return { id: t.id ?? generateTransactionId(), amount: Number.isFinite(Number(t.amount)) ? Number(t.amount) : 0, description: typeof t.description === "string" ? t.description : "", category: CATEGORIES.includes(t.category) ? t.category : "Other", purchaseAt: Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString(), createdAt: fb }; }
 
-function normalizeTransaction(t) {
-  const fallback = typeof t.createdAt === "string" ? t.createdAt : new Date().toISOString();
-  const purchaseRaw = typeof t.purchaseAt === "string" ? t.purchaseAt : fallback;
-  const purchase = new Date(purchaseRaw);
-  return { id: t.id ?? generateTransactionId(), amount: Number.isFinite(Number(t.amount)) ? Number(t.amount) : 0, description: typeof t.description === "string" ? t.description : "", category: CATEGORIES.includes(t.category) ? t.category : "Other", purchaseAt: Number.isNaN(purchase.getTime()) ? new Date().toISOString() : purchase.toISOString(), createdAt: fallback };
-}
-
-
-function getIncomeSources() {
-  try {
-    const raw = localStorage.getItem(INCOME_SOURCES_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch { return []; }
-}
+function getIncomeSources() { try { const r = localStorage.getItem(INCOME_SOURCES_STORAGE_KEY); const p = r ? JSON.parse(r) : []; return Array.isArray(p) ? p : []; } catch { return []; } }
 function saveIncomeSources(sources) { localStorage.setItem(INCOME_SOURCES_STORAGE_KEY, JSON.stringify(sources)); }
-function monthlyIncomeEquivalent(src, now = new Date()) {
-  const amount = toMoneyNumber(src.amount);
-  if (src.frequency === "yearly") return amount / 12;
-  if (src.frequency === "weekly") return (amount * 52) / 12;
-  if (src.frequency === "onetime") {
-    const d = new Date(src.dateReceived || "");
-    return (!Number.isNaN(d.getTime()) && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) ? amount : 0;
-  }
-  return amount;
-}
+function monthlyIncomeEquivalent(src, now = new Date()) { const a = toMoneyNumber(src.amount); if (src.frequency === "yearly") return a / 12; if (src.frequency === "weekly") return (a * 52) / 12; if (src.frequency === "onetime") { const d = new Date(src.dateReceived || ""); return (!Number.isNaN(d.getTime()) && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) ? a : 0; } return a; }
+
 function renderIncomeSources() {
   if (!els.fdIncomeList) return;
-  const now = new Date();
   const sources = getIncomeSources();
+  const now = new Date();
   els.fdIncomeList.innerHTML = "";
-  if (!sources.length) {
-    const li = document.createElement("li");
-    li.className = "text-slate-500 text-sm";
-    li.textContent = "No income sources added yet.";
-    els.fdIncomeList.appendChild(li);
-    return;
-  }
+  if (!sources.length) { els.fdIncomeList.innerHTML = '<li class="text-slate-500 text-sm">No income sources added yet.</li>'; return; }
   sources.forEach((src) => {
-    const li = document.createElement("li");
-    li.className = "rounded-lg border border-slate-200 p-3 bg-slate-50";
-    const monthlyEq = monthlyIncomeEquivalent(src, now);
-    li.innerHTML = `<div class="flex items-start justify-between gap-2"><div><p class="font-medium">${src.name || "Income"}</p><p class="text-sm text-slate-600">${formatCurrency(toMoneyNumber(src.amount))} • ${src.frequency}</p>${src.frequency === "onetime" && src.dateReceived ? `<p class="text-xs text-slate-500">Date: ${src.dateReceived}</p>` : ""}<p class="text-sm text-slate-700">Monthly equivalent: ${formatCurrency(monthlyEq)}</p></div><div class="flex gap-2"><button type="button" data-income-action="edit" data-income-id="${src.id}" class="rounded border border-slate-300 px-2 py-1 text-xs">Edit</button><button type="button" data-income-action="delete" data-income-id="${src.id}" class="rounded bg-rose-600 text-white px-2 py-1 text-xs">Delete</button></div></div>`;
+    const li = document.createElement("li"); li.className = "rounded-lg border border-slate-200 p-3 bg-slate-50";
+    const m = monthlyIncomeEquivalent(src, now);
+    if (state.incomeConfirmDeleteId === src.id) {
+      li.innerHTML = `<p class="text-sm text-rose-700 mb-2">Are you sure you want to delete this income source?</p><div class="flex gap-2"><button data-income-action="confirm-delete" data-income-id="${src.id}" class="rounded bg-rose-600 text-white px-2 py-1 text-xs">Confirm Delete</button><button data-income-action="cancel-delete" class="rounded border border-slate-300 px-2 py-1 text-xs">Cancel</button></div>`;
+    } else if (state.incomeEditingId === src.id) {
+      li.innerHTML = `<form data-income-inline-form="${src.id}" class="grid gap-2 sm:grid-cols-2"><input name="name" value="${(src.name||"").replace(/"/g,"&quot;")}" class="rounded border border-slate-300 px-2 py-1 text-sm" required /><input name="amount" type="number" min="0" step="0.01" value="${toMoneyNumber(src.amount)}" class="rounded border border-slate-300 px-2 py-1 text-sm" required /><select name="frequency" class="rounded border border-slate-300 px-2 py-1 text-sm"><option value="monthly" ${src.frequency==="monthly"?"selected":""}>Monthly</option><option value="yearly" ${src.frequency==="yearly"?"selected":""}>Yearly</option><option value="weekly" ${src.frequency==="weekly"?"selected":""}>Weekly</option><option value="onetime" ${src.frequency==="onetime"?"selected":""}>One-time</option></select><input name="dateReceived" type="date" value="${src.dateReceived||""}" class="rounded border border-slate-300 px-2 py-1 text-sm" /><div class="sm:col-span-2 flex gap-2"><button type="submit" class="rounded bg-blue-600 text-white px-2 py-1 text-xs">Save Changes</button><button data-income-action="cancel-edit" type="button" class="rounded border border-slate-300 px-2 py-1 text-xs">Cancel</button></div></form>`;
+    } else {
+      li.innerHTML = `<div class="flex items-start justify-between gap-2"><div><p class="font-medium">${src.name}</p><p class="text-sm text-slate-600">${formatCurrency(toMoneyNumber(src.amount))} • ${src.frequency}</p>${src.frequency==="onetime"&&src.dateReceived?`<p class="text-xs text-slate-500">Date received: ${src.dateReceived}</p>`:""}<p class="text-sm text-slate-700">Monthly equivalent: ${formatCurrency(m)}</p></div><div class="flex gap-2"><button data-income-action="edit" data-income-id="${src.id}" class="rounded border border-slate-300 px-2 py-1 text-xs">Edit</button><button data-income-action="delete" data-income-id="${src.id}" class="rounded bg-rose-600 text-white px-2 py-1 text-xs">Delete</button></div></div>`;
+    }
     els.fdIncomeList.appendChild(li);
   });
 }
-function getDashboardInputs() {
-  try {
-    const raw = localStorage.getItem(DASHBOARD_STORAGE_KEY);
-    const p = raw ? JSON.parse(raw) : {};
-    return { salary: toMoneyNumber(p.salary), otherIncome: toMoneyNumber(p.otherIncome), taxAmount: toMoneyNumber(p.taxAmount), taxType: ["monthly", "yearly", "percentage"].includes(p.taxType) ? p.taxType : "monthly", fixedBills: toMoneyNumber(p.fixedBills), subscriptions: toMoneyNumber(p.subscriptions), savingsGoal: toMoneyNumber(p.savingsGoal), emergencyGoal: toMoneyNumber(p.emergencyGoal), otherDeductions: toMoneyNumber(p.otherDeductions) };
-  } catch { return { salary: 0, otherIncome: 0, taxAmount: 0, taxType: "monthly", fixedBills: 0, subscriptions: 0, savingsGoal: 0, emergencyGoal: 0, otherDeductions: 0 }; }
-}
-function saveDashboardInputs(v) { localStorage.setItem(DASHBOARD_STORAGE_KEY, JSON.stringify(v)); }
 
-function setDashboardFormValues(v) {
-  if (!els.fdForm) return;
-  els.fdTaxAmount.value = v.taxAmount || ""; els.fdTaxType.value = v.taxType;
-  els.fdFixedBills.value = v.fixedBills || ""; els.fdSubscriptions.value = v.subscriptions || ""; els.fdSavingsGoal.value = v.savingsGoal || ""; els.fdEmergencyGoal.value = v.emergencyGoal || ""; els.fdOtherDeductions.value = v.otherDeductions || "";
-}
-function getDashboardFormValues() { return { salary: 0, otherIncome: 0, taxAmount: toMoneyNumber(els.fdTaxAmount?.value), taxType: els.fdTaxType?.value || "monthly", fixedBills: toMoneyNumber(els.fdFixedBills?.value), subscriptions: toMoneyNumber(els.fdSubscriptions?.value), savingsGoal: toMoneyNumber(els.fdSavingsGoal?.value), emergencyGoal: toMoneyNumber(els.fdEmergencyGoal?.value), otherDeductions: toMoneyNumber(els.fdOtherDeductions?.value) }; }
+function getDashboardInputs(){ try{ const r=localStorage.getItem(DASHBOARD_STORAGE_KEY); const p=r?JSON.parse(r):{}; return { taxAmount:toMoneyNumber(p.taxAmount), taxType:["monthly","yearly","percentage"].includes(p.taxType)?p.taxType:"monthly", fixedBills:toMoneyNumber(p.fixedBills), subscriptions:toMoneyNumber(p.subscriptions), savingsGoal:toMoneyNumber(p.savingsGoal), emergencyGoal:toMoneyNumber(p.emergencyGoal), otherDeductions:toMoneyNumber(p.otherDeductions)};}catch{return {taxAmount:0,taxType:"monthly",fixedBills:0,subscriptions:0,savingsGoal:0,emergencyGoal:0,otherDeductions:0};}}
+const saveDashboardInputs=(v)=>localStorage.setItem(DASHBOARD_STORAGE_KEY,JSON.stringify(v));
+function setDashboardFormValues(v){ if(!els.fdForm) return; els.fdTaxAmount.value=v.taxAmount||""; els.fdTaxType.value=v.taxType; els.fdFixedBills.value=v.fixedBills||""; els.fdSubscriptions.value=v.subscriptions||""; els.fdSavingsGoal.value=v.savingsGoal||""; els.fdEmergencyGoal.value=v.emergencyGoal||""; els.fdOtherDeductions.value=v.otherDeductions||""; }
+const getDashboardFormValues=()=>({ taxAmount:toMoneyNumber(els.fdTaxAmount?.value), taxType:els.fdTaxType?.value||"monthly", fixedBills:toMoneyNumber(els.fdFixedBills?.value), subscriptions:toMoneyNumber(els.fdSubscriptions?.value), savingsGoal:toMoneyNumber(els.fdSavingsGoal?.value), emergencyGoal:toMoneyNumber(els.fdEmergencyGoal?.value), otherDeductions:toMoneyNumber(els.fdOtherDeductions?.value) });
 
-function filterByPeriod(txns) {
-  const period = PERIOD_FILTERS.includes(els.periodSelect.value) ? els.periodSelect.value : "all";
-  if (period === "all") return txns;
-  const now = new Date();
-  return txns.filter((t) => { const d = new Date(t.purchaseAt); if (period === "daily") return d.toDateString() === now.toDateString(); if (period === "weekly") return now.getTime() - d.getTime() <= 604800000 && now.getTime() >= d.getTime(); if (period === "monthly") return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); return d.getFullYear() === now.getFullYear(); });
-}
-function sortedTxns(txns) { const factor = els.sortOrderSelect.value === "oldest" ? 1 : -1; return [...txns].sort((a, b) => (new Date(a.purchaseAt) - new Date(b.purchaseAt)) * factor); }
-function renderSummary(txns) { const filtered = filterByPeriod(txns); els.totalSpent.textContent = formatCurrency(filtered.reduce((s, t) => s + t.amount, 0)); els.transactionCount.textContent = String(filtered.length); const totals = Object.fromEntries(CATEGORIES.map((c) => [c, 0])); filtered.forEach((t) => { totals[t.category] += t.amount; }); els.categorySummary.innerHTML = ""; CATEGORIES.forEach((c) => { const li = document.createElement("li"); li.className = "flex justify-between rounded-md border border-slate-200 px-3 py-2 bg-white"; li.textContent = `${c}: ${formatCurrency(totals[c])}`; els.categorySummary.appendChild(li); }); }
+function filterByPeriod(txns){ const p=PERIOD_FILTERS.includes(els.periodSelect.value)?els.periodSelect.value:"all"; if(p==="all") return txns; const now=new Date(); return txns.filter((t)=>{ const d=new Date(t.purchaseAt); if(p==="daily") return d.toDateString()===now.toDateString(); if(p==="weekly") return now.getTime()-d.getTime()<=604800000&&now.getTime()>=d.getTime(); if(p==="monthly") return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth(); return d.getFullYear()===now.getFullYear(); }); }
+const sortedTxns=(txns)=>{ const f=els.sortOrderSelect.value==="oldest"?1:-1; return [...txns].sort((a,b)=>(new Date(a.purchaseAt)-new Date(b.purchaseAt))*f); };
+function renderSummary(txns){ const filtered=filterByPeriod(txns); els.totalSpent.textContent=formatCurrency(filtered.reduce((s,t)=>s+t.amount,0)); els.transactionCount.textContent=String(filtered.length); const totals=Object.fromEntries(CATEGORIES.map((c)=>[c,0])); filtered.forEach((t)=>totals[t.category]+=t.amount); els.categorySummary.innerHTML=""; CATEGORIES.forEach((c)=>{ const li=document.createElement("li"); li.className="flex justify-between rounded-md border border-slate-200 px-3 py-2 bg-white"; li.textContent=`${c}: ${formatCurrency(totals[c])}`; els.categorySummary.appendChild(li); }); }
+function renderFinancialDashboard(txns){ if(!els.fdMonthlyIncome) return; const i=getDashboardFormValues(); const income=getIncomeSources().reduce((s,src)=>s+monthlyIncomeEquivalent(src),0); const taxes=i.taxType==="yearly"?i.taxAmount/12:i.taxType==="percentage"?income*(i.taxAmount/100):i.taxAmount; const deductions=taxes+i.fixedBills+i.subscriptions+i.savingsGoal+i.emergencyGoal+i.otherDeductions; const expendable=income-deductions; const now=new Date(); const spentMonth=txns.filter((t)=>{ const d=new Date(t.purchaseAt); return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()&&t.amount>0; }).reduce((s,t)=>s+Number(t.amount),0); const remaining=expendable-spentMonth; const daysLeft=new Date(now.getFullYear(),now.getMonth()+1,0).getDate()-now.getDate()+1; const safe=daysLeft>0?remaining/daysLeft:remaining; els.fdMonthlyIncome.textContent=formatCurrency(income); els.fdMonthlyExpendable.textContent=formatCurrency(expendable); els.fdSpentMonth.textContent=formatCurrency(spentMonth); els.fdRemaining.textContent=formatCurrency(remaining); els.fdSafeToday.textContent=formatCurrency(safe); els.fdRemaining.classList.toggle("text-rose-600",remaining<0); els.fdSafeWarning.classList.toggle("hidden",safe>=0); }
 
-function renderFinancialDashboard(txns) {
-  if (!els.fdMonthlyIncome) return;
-  const i = getDashboardFormValues();
-  const income = getIncomeSources().reduce((sum, src) => sum + monthlyIncomeEquivalent(src), 0);
-  const taxes = i.taxType === "yearly" ? i.taxAmount / 12 : i.taxType === "percentage" ? income * (i.taxAmount / 100) : i.taxAmount;
-  const deductions = taxes + i.fixedBills + i.subscriptions + i.savingsGoal + i.emergencyGoal + i.otherDeductions;
-  const expendable = income - deductions;
-  const now = new Date();
-  const spentMonth = txns.filter((t) => { const d = new Date(t.purchaseAt); return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && t.amount > 0; }).reduce((s, t) => s + Number(t.amount), 0);
-  const remaining = expendable - spentMonth;
-  const daysLeft = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate() + 1;
-  const safe = daysLeft > 0 ? remaining / daysLeft : remaining;
-  els.fdMonthlyIncome.textContent = formatCurrency(income);
-  els.fdMonthlyExpendable.textContent = formatCurrency(expendable);
-  els.fdSpentMonth.textContent = formatCurrency(spentMonth);
-  els.fdRemaining.textContent = formatCurrency(remaining);
-  els.fdSafeToday.textContent = formatCurrency(safe);
-  els.fdRemaining.classList.toggle("text-rose-600", remaining < 0);
-  els.fdSafeWarning.classList.toggle("hidden", safe >= 0);
-}
+function buildTrendSeries(txns,range){ const s=txns.map((t)=>({amount:Number(t.amount),date:new Date(t.purchaseAt)})).filter((t)=>Number.isFinite(t.amount)&&t.amount>0&&!Number.isNaN(t.date.getTime())); if(!s.length) return []; const now=new Date(); const b=new Map(); if(range==="week"){ const labels=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]; labels.forEach((l)=>b.set(l,0)); const start=new Date(now); start.setDate(now.getDate()-now.getDay()); start.setHours(0,0,0,0); s.forEach((t)=>{ const diff=Math.floor((t.date-start)/86400000); if(diff>=0&&diff<7){ const k=labels[t.date.getDay()]; b.set(k,(b.get(k)||0)+t.amount); }}); return labels.map((label)=>({label,amount:b.get(label)||0})); } if(range==="month"){ const y=now.getFullYear(),m=now.getMonth(),days=new Date(y,m+1,0).getDate(); for(let d=1; d<=days; d++) b.set(String(d),0); s.forEach((t)=>{ if(t.date.getFullYear()===y&&t.date.getMonth()===m){ const k=String(t.date.getDate()); b.set(k,(b.get(k)||0)+t.amount); }}); return Array.from(b,([label,amount])=>({label,amount})); } const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; months.forEach((m)=>b.set(m,0)); s.forEach((t)=>{ if(t.date.getFullYear()===now.getFullYear()){ const k=months[t.date.getMonth()]; b.set(k,(b.get(k)||0)+t.amount); }}); return months.map((label)=>({label,amount:b.get(label)||0})); }
+function renderTrend(txns){ const range=TREND_RANGES.includes(els.trendRangeSelect.value)?els.trendRangeSelect.value:"week"; const data=buildTrendSeries(txns,range).filter((d)=>d.amount>0); const emptyEl=$("trend-empty"),chartEl=$("trend-chart"); if(!emptyEl||!chartEl||!window.Recharts||!window.React||!window.ReactDOM) return; emptyEl.classList.toggle("hidden",data.length!==0); chartEl.classList.toggle("hidden",data.length===0); if(!data.length){ if(trendChartRoot?.unmount){ trendChartRoot.unmount(); trendChartRoot=null;} return;} const {ResponsiveContainer,AreaChart,Area,XAxis,YAxis,CartesianGrid,Tooltip}=window.Recharts; const e=window.React.createElement; const chartNode=e(ResponsiveContainer,{width:"100%",height:"100%"},e(AreaChart,{data,margin:{top:12,right:12,left:4,bottom:8}},e(CartesianGrid,{strokeDasharray:"3 3",stroke:"#e2e8f0"}),e(XAxis,{dataKey:"label",tick:{fontSize:12,fill:"#475569"}}),e(YAxis,{tickFormatter:(v)=>`$${Number(v).toFixed(0)}`,tick:{fontSize:12,fill:"#475569"},width:56}),e(Tooltip,{formatter:(v)=>formatCurrency(Number(v)||0),labelStyle:{color:"#0f172a"}}),e(Area,{type:"monotone",dataKey:"amount",stroke:"#2563eb",fill:"#93c5fd",fillOpacity:0.35,strokeWidth:3}))); if(typeof window.ReactDOM.createRoot==="function"){ if(!trendChartRoot) trendChartRoot=window.ReactDOM.createRoot(chartEl); trendChartRoot.render(chartNode);} else if(typeof window.ReactDOM.render==="function"){ window.ReactDOM.render(chartNode,chartEl);} }
 
-function buildTrendSeries(txns, range) {
-  const spendingOnly = txns.map((t) => ({ amount: Number(t.amount), date: new Date(t.purchaseAt) })).filter((t) => Number.isFinite(t.amount) && t.amount > 0 && !Number.isNaN(t.date.getTime()));
-  if (!spendingOnly.length) return [];
-  const now = new Date(); const bucket = new Map();
-  if (range === "week") { const labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]; labels.forEach((l) => bucket.set(l, 0)); const start = new Date(now); start.setDate(now.getDate() - now.getDay()); start.setHours(0,0,0,0); spendingOnly.forEach((t) => { const diff = Math.floor((t.date - start)/86400000); if (diff>=0 && diff<7) { const key = labels[t.date.getDay()]; bucket.set(key, (bucket.get(key)||0)+t.amount); }}); return labels.map((label)=>({label, amount: bucket.get(label)||0})); }
-  if (range === "month") { const y=now.getFullYear(), m=now.getMonth(), days=new Date(y,m+1,0).getDate(); for(let d=1; d<=days; d++) bucket.set(String(d),0); spendingOnly.forEach((t)=>{ if(t.date.getFullYear()===y && t.date.getMonth()===m){ const k=String(t.date.getDate()); bucket.set(k,(bucket.get(k)||0)+t.amount); }}); return Array.from(bucket, ([label, amount])=>({label, amount})); }
-  const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; months.forEach((m)=>bucket.set(m,0)); spendingOnly.forEach((t)=>{ if(t.date.getFullYear()===now.getFullYear()){ const k=months[t.date.getMonth()]; bucket.set(k,(bucket.get(k)||0)+t.amount); }}); return months.map((label)=>({label, amount: bucket.get(label)||0}));
-}
+function renderInlineEditCard(li,t){const dt=splitDateTime(t.purchaseAt);li.innerHTML=`<form class="w-full grid gap-3" data-inline-form="${t.id}"><div class="grid gap-3 sm:grid-cols-2"><div><label class="block text-xs font-medium text-slate-600 mb-1">Amount ($)</label><input name="amount" type="number" min="0" step="0.01" required value="${t.amount}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div><div><label class="block text-xs font-medium text-slate-600 mb-1">Category</label><select name="category" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">${CATEGORIES.map((c)=>`<option ${c===t.category?"selected":""}>${c}</option>`).join("")}</select></div></div><div><label class="block text-xs font-medium text-slate-600 mb-1">Description</label><input name="description" type="text" required value="${t.description.replace(/"/g,"&quot;")}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div><div class="grid gap-3 sm:grid-cols-2"><div><label class="block text-xs font-medium text-slate-600 mb-1">Date of Purchase</label><input name="purchaseDate" type="date" required value="${dt.date}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div><div><label class="block text-xs font-medium text-slate-600 mb-1">Time of Purchase</label><input name="purchaseTime" type="time" required value="${dt.time}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div></div><div class="flex flex-wrap gap-2"><button type="submit" class="rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">Save Changes</button><button type="button" data-action="cancel-inline-edit" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">Cancel</button><button type="button" data-action="request-delete" data-id="${t.id}" class="rounded-lg bg-rose-600 px-3 py-2 text-white text-sm">Delete</button></div></form>`;}
+function renderInlineDeleteConfirm(li,t){li.innerHTML=`<div class="w-full rounded-lg border border-rose-200 bg-rose-50 p-4"><p class="text-sm text-rose-800 font-medium">Are you sure you want to delete this transaction?</p><p class="text-xs text-rose-700 mt-1">${t.description} • ${formatCurrency(t.amount)}</p><div class="mt-3 flex gap-2"><button type="button" data-action="confirm-delete" data-id="${t.id}" class="rounded-lg bg-rose-600 px-3 py-2 text-white text-sm">Confirm Delete</button><button type="button" data-action="cancel-delete" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">Cancel</button></div></div>`;}
+function renderTransactions(txns){els.transactionList.innerHTML="";els.emptyState.style.display=txns.length?"none":"block";txns.forEach((t)=>{const li=document.createElement("li");li.className="rounded-lg border border-slate-200 p-3 sm:p-4 bg-slate-50";if(state.inlineEditingId===t.id){state.confirmDeleteId===t.id?renderInlineDeleteConfirm(li,t):renderInlineEditCard(li,t);els.transactionList.appendChild(li);return;}const row=document.createElement("div");row.className="flex items-start justify-between gap-4";const left=document.createElement("div");left.innerHTML=`<p class="font-semibold text-lg">${formatCurrency(t.amount)}</p><p>${t.description}</p><p class="text-sm text-slate-500">Category: ${t.category}</p><p class="text-sm text-slate-500">${new Date(t.purchaseAt).toLocaleString()}</p>`;const actions=document.createElement("div");actions.className="flex gap-2";const edit=document.createElement("button");edit.type="button";edit.textContent="Edit";edit.className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm";edit.dataset.action="edit";edit.dataset.id=t.id;actions.append(edit);row.append(left,actions);li.appendChild(row);els.transactionList.appendChild(li);});}
 
-function renderTrend(txns) {
-  const range = TREND_RANGES.includes(els.trendRangeSelect.value) ? els.trendRangeSelect.value : "week";
-  const data = buildTrendSeries(txns, range).filter((d) => d.amount > 0);
-  const emptyEl = $("trend-empty"), chartEl = $("trend-chart");
-  if (!emptyEl || !chartEl || !window.Recharts || !window.React || !window.ReactDOM) return;
-  emptyEl.classList.toggle("hidden", data.length !== 0); chartEl.classList.toggle("hidden", data.length === 0);
-  if (!data.length) { if (trendChartRoot?.unmount) { trendChartRoot.unmount(); trendChartRoot = null; } return; }
-  const { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } = window.Recharts;
-  const e = window.React.createElement;
-  const chartNode = e(ResponsiveContainer,{width:"100%",height:"100%"},e(AreaChart,{data,margin:{top:12,right:12,left:4,bottom:8}},e(CartesianGrid,{strokeDasharray:"3 3",stroke:"#e2e8f0"}),e(XAxis,{dataKey:"label",tick:{fontSize:12,fill:"#475569"}}),e(YAxis,{tickFormatter:(v)=>`$${Number(v).toFixed(0)}`,tick:{fontSize:12,fill:"#475569"},width:56}),e(Tooltip,{formatter:(v)=>formatCurrency(Number(v)||0),labelStyle:{color:"#0f172a"}}),e(Area,{type:"monotone",dataKey:"amount",stroke:"#2563eb",fill:"#93c5fd",fillOpacity:0.35,strokeWidth:3})));
-  if (typeof window.ReactDOM.createRoot === "function") { if (!trendChartRoot) trendChartRoot = window.ReactDOM.createRoot(chartEl); trendChartRoot.render(chartNode); } else if (typeof window.ReactDOM.render === "function") { window.ReactDOM.render(chartNode, chartEl); }
-}
-
-function renderInlineEditCard(li, t) { const dt=splitDateTime(t.purchaseAt); li.innerHTML=`<form class="w-full grid gap-3" data-inline-form="${t.id}"><div class="grid gap-3 sm:grid-cols-2"><div><label class="block text-xs font-medium text-slate-600 mb-1">Amount ($)</label><input name="amount" type="number" min="0" step="0.01" required value="${t.amount}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div><div><label class="block text-xs font-medium text-slate-600 mb-1">Category</label><select name="category" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">${CATEGORIES.map((c)=>`<option ${c===t.category?"selected":""}>${c}</option>`).join("")}</select></div></div><div><label class="block text-xs font-medium text-slate-600 mb-1">Description</label><input name="description" type="text" required value="${t.description.replace(/"/g,"&quot;")}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div><div class="grid gap-3 sm:grid-cols-2"><div><label class="block text-xs font-medium text-slate-600 mb-1">Date of Purchase</label><input name="purchaseDate" type="date" required value="${dt.date}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div><div><label class="block text-xs font-medium text-slate-600 mb-1">Time of Purchase</label><input name="purchaseTime" type="time" required value="${dt.time}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div></div><div class="flex flex-wrap gap-2"><button type="submit" class="rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">Save Changes</button><button type="button" data-action="cancel-inline-edit" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">Cancel</button><button type="button" data-action="request-delete" data-id="${t.id}" class="rounded-lg bg-rose-600 px-3 py-2 text-white text-sm">Delete</button></div></form>`; }
-function renderInlineDeleteConfirm(li, t) { li.innerHTML=`<div class="w-full rounded-lg border border-rose-200 bg-rose-50 p-4"><p class="text-sm text-rose-800 font-medium">Are you sure you want to delete this transaction?</p><p class="text-xs text-rose-700 mt-1">${t.description} • ${formatCurrency(t.amount)}</p><div class="mt-3 flex gap-2"><button type="button" data-action="confirm-delete" data-id="${t.id}" class="rounded-lg bg-rose-600 px-3 py-2 text-white text-sm">Confirm Delete</button><button type="button" data-action="cancel-delete" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">Cancel</button></div></div>`; }
-function renderTransactions(txns){ els.transactionList.innerHTML=""; els.emptyState.style.display=txns.length?"none":"block"; txns.forEach((t)=>{ const li=document.createElement("li"); li.className="rounded-lg border border-slate-200 p-3 sm:p-4 bg-slate-50"; if(state.inlineEditingId===t.id){ state.confirmDeleteId===t.id?renderInlineDeleteConfirm(li,t):renderInlineEditCard(li,t); els.transactionList.appendChild(li); return;} const row=document.createElement("div"); row.className="flex items-start justify-between gap-4"; const left=document.createElement("div"); left.innerHTML=`<p class="font-semibold text-lg">${formatCurrency(t.amount)}</p><p>${t.description}</p><p class="text-sm text-slate-500">Category: ${t.category}</p><p class="text-sm text-slate-500">${new Date(t.purchaseAt).toLocaleString()}</p>`; const actions=document.createElement("div"); actions.className="flex gap-2"; const edit=document.createElement("button"); edit.type="button"; edit.textContent="Edit"; edit.className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"; edit.dataset.action="edit"; edit.dataset.id=t.id; actions.append(edit); row.append(left,actions); li.appendChild(row); els.transactionList.appendChild(li); }); }
-
-function render(){ const txns=sortedTxns(getTransactions().map(normalizeTransaction)); state.transactionMap=new Map(txns.map((t)=>[t.id,t])); renderTransactions(txns); renderSummary(txns); renderTrend(txns); renderFinancialDashboard(txns); }
-function setDefaultDateTime(){ const now=new Date(); els.purchaseDate.value=now.toISOString().slice(0,10); els.purchaseTime.value=now.toTimeString().slice(0,5); }
+function render(){const txns=sortedTxns(getTransactions().map(normalizeTransaction));state.transactionMap=new Map(txns.map((t)=>[t.id,t]));renderTransactions(txns);renderSummary(txns);renderTrend(txns);renderIncomeSources();renderFinancialDashboard(txns);} 
+function setDefaultDateTime(){const now=new Date();els.purchaseDate.value=now.toISOString().slice(0,10);els.purchaseTime.value=now.toTimeString().slice(0,5);} 
 
 function bind(){
-  els.description.addEventListener("input",()=>{ const c=categorize(els.description.value.trim()); els.categoryPreview.textContent=`Category preview: ${c}`; els.category.value=c; });
-  els.sortOrderSelect.addEventListener("change",render); els.periodSelect.addEventListener("change",render); els.trendRangeSelect.addEventListener("change",render);
-  if (els.fdForm) { els.fdForm.addEventListener("input",()=>{ const v=getDashboardFormValues(); saveDashboardInputs(v); render(); }); }
-
-
-  if (els.fdAddIncome) {
-    const resetIncomeForm = () => {
-      els.fdIncomeForm.reset();
-      els.fdIncomeForm.dataset.editId = "";
-      els.fdIncomeDateWrap.classList.add("hidden");
-      els.fdIncomeFormWrap.classList.add("hidden");
-    };
-    els.fdAddIncome.addEventListener("click", () => { els.fdIncomeFormWrap.classList.remove("hidden"); });
-    els.fdIncomeFrequency.addEventListener("change", () => {
-      els.fdIncomeDateWrap.classList.toggle("hidden", els.fdIncomeFrequency.value !== "onetime");
-    });
-    els.fdIncomeCancel.addEventListener("click", resetIncomeForm);
-    els.fdIncomeForm.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const sources = getIncomeSources();
-      const next = {
-        id: els.fdIncomeForm.dataset.editId || generateTransactionId(),
-        name: (els.fdIncomeName.value || "").trim(),
-        amount: toMoneyNumber(els.fdIncomeAmount.value),
-        frequency: els.fdIncomeFrequency.value,
-        dateReceived: els.fdIncomeFrequency.value === "onetime" ? els.fdIncomeDate.value : "",
-      };
-      if (!next.name || next.amount <= 0) return;
-      const updated = els.fdIncomeForm.dataset.editId ? sources.map((s) => s.id === next.id ? next : s) : [...sources, next];
-      saveIncomeSources(updated);
-      resetIncomeForm();
-      render();
-    });
-
-    els.fdIncomeList.addEventListener("click", (event) => {
-      const btn = event.target.closest("button[data-income-action]");
-      if (!btn) return;
-      const id = btn.dataset.incomeId;
-      const action = btn.dataset.incomeAction;
-      const sources = getIncomeSources();
-      const src = sources.find((x) => x.id === id);
-      if (!src) return;
-      if (action === "edit") {
-        els.fdIncomeFormWrap.classList.remove("hidden");
-        els.fdIncomeForm.dataset.editId = src.id;
-        els.fdIncomeName.value = src.name || "";
-        els.fdIncomeAmount.value = src.amount || "";
-        els.fdIncomeFrequency.value = src.frequency || "monthly";
-        els.fdIncomeDateWrap.classList.toggle("hidden", els.fdIncomeFrequency.value !== "onetime");
-        els.fdIncomeDate.value = src.dateReceived || "";
-      }
-      if (action === "delete") {
-        if (window.confirm("Are you sure you want to delete this income source?")) {
-          saveIncomeSources(sources.filter((x) => x.id !== id));
-          render();
-        }
-      }
-    });
+  els.description.addEventListener("input",()=>{const c=categorize(els.description.value.trim());els.categoryPreview.textContent=`Category preview: ${c}`;els.category.value=c;});
+  els.sortOrderSelect.addEventListener("change",render);els.periodSelect.addEventListener("change",render);els.trendRangeSelect.addEventListener("change",render);
+  if(els.fdForm) els.fdForm.addEventListener("input",()=>{saveDashboardInputs(getDashboardFormValues());render();});
+  if(els.fdAddIncome){
+    const clearIncomeForm=()=>{els.fdIncomeForm.reset();els.fdIncomeForm.dataset.editId="";els.fdIncomeDateWrap.classList.add("hidden");};
+    els.fdAddIncome.addEventListener("click",()=>els.fdIncomeFormWrap.classList.remove("hidden"));
+    els.fdIncomeFrequency.addEventListener("change",()=>els.fdIncomeDateWrap.classList.toggle("hidden",els.fdIncomeFrequency.value!=="onetime"));
+    els.fdIncomeCancel.addEventListener("click",clearIncomeForm);
+    els.fdIncomeForm.addEventListener("submit",(e)=>{e.preventDefault();const sources=getIncomeSources();const next={id:els.fdIncomeForm.dataset.editId||generateTransactionId(),name:(els.fdIncomeName.value||"").trim(),amount:toMoneyNumber(els.fdIncomeAmount.value),frequency:els.fdIncomeFrequency.value,dateReceived:els.fdIncomeFrequency.value==="onetime"?els.fdIncomeDate.value:""};if(!next.name||next.amount<=0) return;const updated=els.fdIncomeForm.dataset.editId?sources.map((s)=>s.id===next.id?next:s):[...sources,next];saveIncomeSources(updated);clearIncomeForm();els.fdIncomeFormWrap.classList.remove("hidden");render();});
+    els.fdIncomeList.addEventListener("click",(e)=>{const b=e.target.closest("button[data-income-action]");if(!b)return;const id=b.dataset.incomeId;const action=b.dataset.incomeAction;const sources=getIncomeSources();if(action==="edit"&&id){state.incomeEditingId=id;state.incomeConfirmDeleteId=null;render();return;}if(action==="cancel-edit"){state.incomeEditingId=null;render();return;}if(action==="delete"&&id){state.incomeConfirmDeleteId=id;render();return;}if(action==="cancel-delete"){state.incomeConfirmDeleteId=null;render();return;}if(action==="confirm-delete"&&id){saveIncomeSources(sources.filter((x)=>x.id!==id));state.incomeConfirmDeleteId=null;state.incomeEditingId=null;render();}});
+    els.fdIncomeList.addEventListener("submit",(e)=>{const f=e.target.closest("form[data-income-inline-form]");if(!f)return;e.preventDefault();const id=f.dataset.incomeInlineForm;const fd=new FormData(f);const next={id,name:String(fd.get("name")||"").trim(),amount:toMoneyNumber(fd.get("amount")),frequency:String(fd.get("frequency")||"monthly"),dateReceived:String(fd.get("dateReceived")||"")};if(!next.name||next.amount<=0)return;saveIncomeSources(getIncomeSources().map((x)=>x.id===id?next:x));state.incomeEditingId=null;render();});
   }
-  els.transactionList.addEventListener("click",(event)=>{ const button=event.target.closest("button[data-action]"); if(!button) return; const {action,id}=button.dataset; if(action==="edit"&&id){ state.inlineEditingId=id; state.confirmDeleteId=null; render(); return;} if(action==="cancel-inline-edit"){ state.inlineEditingId=null; state.confirmDeleteId=null; render(); return;} if(action==="request-delete"&&id){ state.confirmDeleteId=id; render(); return;} if(action==="cancel-delete"){ state.confirmDeleteId=null; render(); return;} if(action==="confirm-delete"&&id){ saveTransactions(getTransactions().map(normalizeTransaction).filter((x)=>x.id!==id)); state.inlineEditingId=null; state.confirmDeleteId=null; render(); }});
-
-  els.transactionList.addEventListener("submit",(event)=>{ const f=event.target.closest("form[data-inline-form]"); if(!f) return; event.preventDefault(); const id=f.dataset.inlineForm; const existing=state.transactionMap.get(id); if(!existing) return; const fd=new FormData(f); const amount=Number(fd.get("amount")); const description=String(fd.get("description")||"").trim(); const category=String(fd.get("category")||"Other"); const purchaseDate=String(fd.get("purchaseDate")||""); const purchaseTime=String(fd.get("purchaseTime")||""); if(!Number.isFinite(amount)||amount<=0||!description) return; const updated={...existing, amount, description, category:CATEGORIES.includes(category)?category:categorize(description), purchaseAt:parsePurchaseDateTime(purchaseDate,purchaseTime)}; saveTransactions(getTransactions().map(normalizeTransaction).map((t)=>t.id===id?updated:t)); state.inlineEditingId=null; state.confirmDeleteId=null; render(); });
-
-  $("open-advanced").addEventListener("click",()=>{$("simple-mode").classList.add("hidden"); $("advanced-mode").classList.remove("hidden");});
-  $("back-simple").addEventListener("click",()=>{$("advanced-mode").classList.add("hidden"); $("simple-mode").classList.remove("hidden");});
-
-  els.form.addEventListener("submit",(e)=>{ e.preventDefault(); const amount=Number(els.amount.value); const description=els.description.value.trim(); if(!Number.isFinite(amount)||amount<=0||!description) return; const txns=getTransactions().map(normalizeTransaction); txns.push({id:generateTransactionId(), amount, description, category:CATEGORIES.includes(els.category.value)?els.category.value:categorize(description), purchaseAt:parsePurchaseDateTime(els.purchaseDate.value,els.purchaseTime.value), createdAt:new Date().toISOString()}); saveTransactions(txns); els.form.reset(); setDefaultDateTime(); els.categoryPreview.textContent="Category preview: Other"; els.amount.focus(); render(); });
+  els.transactionList.addEventListener("click",(e)=>{const b=e.target.closest("button[data-action]");if(!b)return;const {action,id}=b.dataset;if(action==="edit"&&id){state.inlineEditingId=id;state.confirmDeleteId=null;render();return;}if(action==="cancel-inline-edit"){state.inlineEditingId=null;state.confirmDeleteId=null;render();return;}if(action==="request-delete"&&id){state.confirmDeleteId=id;render();return;}if(action==="cancel-delete"){state.confirmDeleteId=null;render();return;}if(action==="confirm-delete"&&id){saveTransactions(getTransactions().map(normalizeTransaction).filter((x)=>x.id!==id));state.inlineEditingId=null;state.confirmDeleteId=null;render();}});
+  els.transactionList.addEventListener("submit",(e)=>{const f=e.target.closest("form[data-inline-form]");if(!f)return;e.preventDefault();const id=f.dataset.inlineForm;const existing=state.transactionMap.get(id);if(!existing)return;const fd=new FormData(f);const amount=Number(fd.get("amount"));const description=String(fd.get("description")||"").trim();const category=String(fd.get("category")||"Other");const purchaseDate=String(fd.get("purchaseDate")||"");const purchaseTime=String(fd.get("purchaseTime")||"");if(!Number.isFinite(amount)||amount<=0||!description)return;const updated={...existing,amount,description,category:CATEGORIES.includes(category)?category:categorize(description),purchaseAt:parsePurchaseDateTime(purchaseDate,purchaseTime)};saveTransactions(getTransactions().map(normalizeTransaction).map((t)=>t.id===id?updated:t));state.inlineEditingId=null;state.confirmDeleteId=null;render();});
+  $("open-advanced").addEventListener("click",()=>{$("simple-mode").classList.add("hidden");$("advanced-mode").classList.remove("hidden");});
+  $("back-simple").addEventListener("click",()=>{$("advanced-mode").classList.add("hidden");$("simple-mode").classList.remove("hidden");});
+  els.form.addEventListener("submit",(e)=>{e.preventDefault();const amount=Number(els.amount.value);const description=els.description.value.trim();if(!Number.isFinite(amount)||amount<=0||!description)return;const txns=getTransactions().map(normalizeTransaction);txns.push({id:generateTransactionId(),amount,description,category:CATEGORIES.includes(els.category.value)?els.category.value:categorize(description),purchaseAt:parsePurchaseDateTime(els.purchaseDate.value,els.purchaseTime.value),createdAt:new Date().toISOString()});saveTransactions(txns);els.form.reset();setDefaultDateTime();els.categoryPreview.textContent="Category preview: Other";els.amount.focus();render();});
 }
 
-function init(){
-  els={ form:$("transaction-form"), amount:$("amount"), description:$("description"), category:$("category"), purchaseDate:$("purchase-date"), purchaseTime:$("purchase-time"), categoryPreview:$("category-preview"), transactionList:$("transaction-list"), emptyState:$("empty-state"), totalSpent:$("total-spent"), transactionCount:$("transaction-count"), categorySummary:$("category-summary"), sortOrderSelect:$("sort-order"), periodSelect:$("summary-period"), trendRangeSelect:$("trend-range"), fdForm:$("fd-form"), fdAddIncome:$("fd-add-income"), fdIncomeFormWrap:$("fd-income-form-wrap"), fdIncomeForm:$("fd-income-form"), fdIncomeName:$("fd-income-name"), fdIncomeAmount:$("fd-income-amount"), fdIncomeFrequency:$("fd-income-frequency"), fdIncomeDate:$("fd-income-date"), fdIncomeDateWrap:$("fd-income-date-wrap"), fdIncomeCancel:$("fd-income-cancel"), fdIncomeList:$("fd-income-list"), fdTaxAmount:$("fd-tax-amount"), fdTaxType:$("fd-tax-type"), fdFixedBills:$("fd-fixed-bills"), fdSubscriptions:$("fd-subscriptions"), fdSavingsGoal:$("fd-savings-goal"), fdEmergencyGoal:$("fd-emergency-goal"), fdOtherDeductions:$("fd-other-deductions"), fdMonthlyIncome:$("fd-monthly-income"), fdMonthlyExpendable:$("fd-monthly-expendable"), fdSpentMonth:$("fd-spent-month"), fdRemaining:$("fd-remaining"), fdSafeToday:$("fd-safe-today"), fdSafeWarning:$("fd-safe-warning") };
-  const required=[els.form,els.amount,els.description,els.category,els.purchaseDate,els.purchaseTime,els.categoryPreview,els.transactionList,els.emptyState,els.totalSpent,els.transactionCount,els.categorySummary,els.sortOrderSelect,els.periodSelect,els.trendRangeSelect];
-  if(required.some((v)=>!v)) return;
-  setDefaultDateTime(); setDashboardFormValues(getDashboardInputs()); bind(); render();
-}
-
+function init(){els={form:$("transaction-form"),amount:$("amount"),description:$("description"),category:$("category"),purchaseDate:$("purchase-date"),purchaseTime:$("purchase-time"),categoryPreview:$("category-preview"),transactionList:$("transaction-list"),emptyState:$("empty-state"),totalSpent:$("total-spent"),transactionCount:$("transaction-count"),categorySummary:$("category-summary"),sortOrderSelect:$("sort-order"),periodSelect:$("summary-period"),trendRangeSelect:$("trend-range"),fdForm:$("fd-form"),fdAddIncome:$("fd-add-income"),fdIncomeFormWrap:$("fd-income-form-wrap"),fdIncomeForm:$("fd-income-form"),fdIncomeName:$("fd-income-name"),fdIncomeAmount:$("fd-income-amount"),fdIncomeFrequency:$("fd-income-frequency"),fdIncomeDate:$("fd-income-date"),fdIncomeDateWrap:$("fd-income-date-wrap"),fdIncomeCancel:$("fd-income-cancel"),fdIncomeList:$("fd-income-list"),fdTaxAmount:$("fd-tax-amount"),fdTaxType:$("fd-tax-type"),fdFixedBills:$("fd-fixed-bills"),fdSubscriptions:$("fd-subscriptions"),fdSavingsGoal:$("fd-savings-goal"),fdEmergencyGoal:$("fd-emergency-goal"),fdOtherDeductions:$("fd-other-deductions"),fdMonthlyIncome:$("fd-monthly-income"),fdMonthlyExpendable:$("fd-monthly-expendable"),fdSpentMonth:$("fd-spent-month"),fdRemaining:$("fd-remaining"),fdSafeToday:$("fd-safe-today"),fdSafeWarning:$("fd-safe-warning")}; const required=[els.form,els.amount,els.description,els.category,els.purchaseDate,els.purchaseTime,els.categoryPreview,els.transactionList,els.emptyState,els.totalSpent,els.transactionCount,els.categorySummary,els.sortOrderSelect,els.periodSelect,els.trendRangeSelect]; if(required.some((v)=>!v)) return; setDefaultDateTime(); setDashboardFormValues(getDashboardInputs()); bind(); render();}
 init();
