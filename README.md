@@ -2,6 +2,17 @@
 
 SpendWise is a client-side personal finance app with Google sign-in through Firebase Authentication and user-specific data stored in Firestore.
 
+## Local development
+
+This repo includes lightweight npm scripts that do not require opening `index.html` directly:
+
+```bash
+npm run dev
+npm run build
+```
+
+`npm run dev` starts a local static server, and `npm run build` copies the static app files into `dist/`.
+
 ## Firebase configuration
 
 Create a Firebase web app, enable **Authentication > Google** provider, and create a Firestore database. Then provide these values to the app.

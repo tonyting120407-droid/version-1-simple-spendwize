@@ -1,7 +1,3 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import { collection, doc as firestoreDoc, getDoc, getDocs, getFirestore, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-
 const STORAGE_KEY = "spendwise_transactions";
 const CATEGORIES = ["Food", "Groceries", "Transportation", "Entertainment", "Electronics", "Bills", "Rent", "Other"];
 const PERIOD_FILTERS = ["daily", "weekly", "monthly", "yearly", "all"];
@@ -31,7 +27,7 @@ const categoryKeywords = {
 };
 
 let state = { inlineEditingId: null, confirmDeleteId: null, incomeEditingId: null, incomeConfirmDeleteId: null, creditCardEditingId: null, creditCardConfirmDeleteId: null, deductionEditing: {}, deductionConfirmDelete: {}, transactionMap: new Map() };
-let appState = { auth: null, db: null, currentUser: null, authReady: false, dataLoaded: false, userData: {}, firebaseConfigured: false };
+let appState = { auth: null, db: null, currentUser: null, authReady: false, dataLoaded: false, userData: {}, firebaseConfigured: false, firebase: null };
 const COLLECTION_STORAGE = {
   transactions: STORAGE_KEY,
   incomeSources: INCOME_SOURCES_STORAGE_KEY,
@@ -43,6 +39,11 @@ const COLLECTION_STORAGE = {
   creditCards: CREDIT_CARDS_STORAGE_KEY,
 };
 const DEDUCTION_COLLECTION_BY_STORAGE = Object.fromEntries(Object.entries(COLLECTION_STORAGE).map(([collectionName, storageKey]) => [storageKey, collectionName]));
+const FIREBASE_MODULE_URLS = {
+  app: "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js",
+  auth: "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js",
+  firestore: "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js",
+};
 let els = {};
 let trendChartRoot = null;
 const $ = (id) => document.getElementById(id);
@@ -65,19 +66,20 @@ function readLocalArray(key){try{const r=localStorage.getItem(key);const p=r?JSO
 function writeLocalArray(key,items){localStorage.setItem(key,JSON.stringify(items));}
 function readLocalObject(key, fallback={}){try{const r=localStorage.getItem(key);const p=r?JSON.parse(r):fallback;return p&&typeof p==="object"&&!Array.isArray(p)?p:fallback;}catch{return fallback;}}
 function writeLocalObject(key,value){localStorage.setItem(key,JSON.stringify(value));}
-function collectionRef(name){return collection(appState.db,"users",appState.currentUser.uid,name);}
-function userDocRef(collectionName, docId){return firestoreDoc(appState.db,"users",appState.currentUser.uid,collectionName,docId);}
+function collectionRef(name){return appState.firebase.collection(appState.db,"users",appState.currentUser.uid,name);}
+function userDocRef(collectionName, docId){return appState.firebase.doc(appState.db,"users",appState.currentUser.uid,collectionName,docId);}
 function getCachedCollection(name){return appState.currentUser&&appState.dataLoaded?appState.userData[name]||[]:readLocalArray(COLLECTION_STORAGE[name]);}
 function setCachedCollection(name,items){if(appState.currentUser)appState.userData[name]=items;writeLocalArray(COLLECTION_STORAGE[name],items);if(appState.currentUser&&appState.db)persistCollection(name,items).catch((error)=>{console.error(error);setAuthError("We could not save your latest changes to Firestore. They are still saved locally as a fallback.");});}
-async function persistCollection(name,items){const ref=collectionRef(name);const snap=await getDocs(ref);const ids=new Set(items.map((item)=>item.id));const batch=writeBatch(appState.db);snap.docs.forEach((document)=>{if(!ids.has(document.id))batch.delete(document.ref);});items.forEach((item)=>batch.set(userDocRef(name,item.id),item));await batch.commit();}
+async function persistCollection(name,items){const ref=collectionRef(name);const snap=await appState.firebase.getDocs(ref);const ids=new Set(items.map((item)=>item.id));const batch=appState.firebase.writeBatch(appState.db);snap.docs.forEach((document)=>{if(!ids.has(document.id))batch.delete(document.ref);});items.forEach((item)=>batch.set(userDocRef(name,item.id),item));await batch.commit();}
 function setAuthError(message){if(!els.authError)return;els.authError.textContent=message||"";els.authError.classList.toggle("hidden",!message);}
 function showView(view){els.loadingScreen?.classList.toggle("hidden",view!=="loading");els.authScreen?.classList.toggle("hidden",view!=="auth");els.authScreen?.classList.toggle("flex",view==="auth");els.appShell?.classList.toggle("hidden",view!=="app");}
-async function loadCollectionData(name){const snap=await getDocs(collectionRef(name));return snap.docs.map((document)=>({id:document.id,...document.data()}));}
-async function loadDashboardSettings(){const snap=await getDoc(userDocRef("dashboardSettings","preferences"));return snap.exists()?snap.data():readLocalObject(DASHBOARD_STORAGE_KEY,{taxAmount:0,taxType:"monthly"});}
+async function loadCollectionData(name){const snap=await appState.firebase.getDocs(collectionRef(name));return snap.docs.map((document)=>({id:document.id,...document.data()}));}
+async function loadDashboardSettings(){const snap=await appState.firebase.getDoc(userDocRef("dashboardSettings","preferences"));return snap.exists()?snap.data():readLocalObject(DASHBOARD_STORAGE_KEY,{taxAmount:0,taxType:"monthly"});}
 async function loadUserData(){showView("loading");appState.dataLoaded=false;const names=Object.keys(COLLECTION_STORAGE);const entries=await Promise.all(names.map(async(name)=>[name,await loadCollectionData(name)]));appState.userData=Object.fromEntries(entries);appState.userData.dashboardSettings=await loadDashboardSettings();appState.dataLoaded=true;setDashboardFormValues(getDashboardInputs());render();showView("app");}
 function clearUserData(){appState.userData={};appState.dataLoaded=false;state.inlineEditingId=null;state.confirmDeleteId=null;state.incomeEditingId=null;state.incomeConfirmDeleteId=null;state.creditCardEditingId=null;state.creditCardConfirmDeleteId=null;state.deductionEditing={};state.deductionConfirmDelete={};state.transactionMap=new Map();}
 function getSignedInLabel(user){return user.displayName||user.email||"Signed in";}
-function initFirebaseAuth(){if(!hasFirebaseConfig()){showView("auth");setAuthError("Firebase is not configured yet. Add your Firebase web app config values before signing in.");return;}const firebaseApp=initializeApp(FIREBASE_CONFIG);appState.auth=getAuth(firebaseApp);appState.db=getFirestore(firebaseApp);appState.firebaseConfigured=true;onAuthStateChanged(appState.auth,async(user)=>{appState.authReady=true;appState.currentUser=user;setAuthError("");if(!user){clearUserData();showView("auth");return;}if(els.userLabel)els.userLabel.textContent=`Signed in as ${getSignedInLabel(user)}`;try{await loadUserData();}catch(error){console.error(error);showView("auth");setAuthError("We could not load your SpendWise data. Please check your Firestore setup and try again.");}});}
+async function loadFirebaseModules(){if(appState.firebase)return appState.firebase;const [appModule,authModule,firestoreModule]=await Promise.all([import(FIREBASE_MODULE_URLS.app),import(FIREBASE_MODULE_URLS.auth),import(FIREBASE_MODULE_URLS.firestore)]);appState.firebase={...appModule,...authModule,...firestoreModule};return appState.firebase;}
+async function initFirebaseAuth(){if(!hasFirebaseConfig()){appState.authReady=true;showView("auth");setAuthError("Sign-in could not load. Please check Firebase configuration.");return;}try{const firebase=await loadFirebaseModules();const firebaseApp=firebase.initializeApp(FIREBASE_CONFIG);appState.auth=firebase.getAuth(firebaseApp);appState.db=firebase.getFirestore(firebaseApp);appState.firebaseConfigured=true;let authSettled=false;const authTimeout=setTimeout(()=>{if(authSettled)return;appState.authReady=true;showView("auth");setAuthError("Sign-in could not load. Please check Firebase configuration.");},8000);firebase.onAuthStateChanged(appState.auth,async(user)=>{authSettled=true;clearTimeout(authTimeout);appState.authReady=true;appState.currentUser=user;setAuthError("");if(!user){clearUserData();showView("auth");return;}if(els.userLabel)els.userLabel.textContent=`Signed in as ${getSignedInLabel(user)}`;try{await loadUserData();}catch(error){console.error(error);showView("auth");setAuthError("We could not load your SpendWise data. Please check your Firestore setup and try again.");}},(error)=>{authSettled=true;clearTimeout(authTimeout);console.error(error);appState.authReady=true;clearUserData();showView("auth");setAuthError("Sign-in could not load. Please check Firebase configuration.");});}catch(error){console.error(error);appState.authReady=true;clearUserData();showView("auth");setAuthError("Sign-in could not load. Please check Firebase configuration.");}}
 function getTransactions() { return getCachedCollection("transactions"); }
 function saveTransactions(txns) { setCachedCollection("transactions", txns.map(normalizeTransaction)); }
 function categorize(description) { const text = description.toLowerCase(); for (const [c, ks] of Object.entries(categoryKeywords)) if (ks.some((k) => text.includes(k))) return c; return "Other"; }
@@ -137,7 +139,7 @@ function renderIncomeSources() {
 }
 
 function getDashboardInputs(){ const p=appState.currentUser&&appState.dataLoaded?appState.userData.dashboardSettings||{}:readLocalObject(DASHBOARD_STORAGE_KEY,{}); return { taxAmount:toMoneyNumber(p.taxAmount), taxType:["monthly","yearly","percentage"].includes(p.taxType)?p.taxType:"monthly", detailsCollapsed: typeof p.detailsCollapsed === "boolean" ? p.detailsCollapsed : undefined };}
-function saveDashboardInputs(v){const next={...(appState.userData.dashboardSettings||{}),...v};appState.userData.dashboardSettings=next;writeLocalObject(DASHBOARD_STORAGE_KEY,next);if(appState.currentUser&&appState.db)setDoc(userDocRef("dashboardSettings","preferences"),next,{merge:true}).catch((error)=>{console.error(error);setAuthError("We could not save dashboard settings to Firestore. They are still saved locally as a fallback.");});}
+function saveDashboardInputs(v){const next={...(appState.userData.dashboardSettings||{}),...v};appState.userData.dashboardSettings=next;writeLocalObject(DASHBOARD_STORAGE_KEY,next);if(appState.currentUser&&appState.db)appState.firebase.setDoc(userDocRef("dashboardSettings","preferences"),next,{merge:true}).catch((error)=>{console.error(error);setAuthError("We could not save dashboard settings to Firestore. They are still saved locally as a fallback.");});}
 function setDashboardFormValues(v){ if(!els.fdForm) return; els.fdTaxAmount.value=v.taxAmount||""; els.fdTaxType.value=v.taxType; }
 const getDashboardFormValues=()=>({ taxAmount:toMoneyNumber(els.fdTaxAmount?.value), taxType:els.fdTaxType?.value||"monthly" });
 const getDashboardDetailsCollapsed=()=>{const settings=getDashboardInputs();return typeof settings.detailsCollapsed==="boolean"?settings.detailsCollapsed:localStorage.getItem(DASHBOARD_DETAILS_COLLAPSED_KEY)!=="false";};
@@ -179,8 +181,8 @@ function render(){const txns=sortedTxns(getTransactions().map(normalizeTransacti
 function setDefaultDateTime(){const now=new Date();els.purchaseDate.value=now.toISOString().slice(0,10);els.purchaseTime.value=now.toTimeString().slice(0,5);} 
 
 function bind(){
-  els.googleSignIn?.addEventListener("click",async()=>{setAuthError("");if(!appState.auth){setAuthError("Firebase is not configured yet. Add your Firebase web app config values before signing in.");return;}const provider=new GoogleAuthProvider();try{await signInWithPopup(appState.auth,provider);}catch(error){console.error(error);setAuthError("Google sign-in failed. Please try again.");}});
-  els.signOut?.addEventListener("click",async()=>{if(appState.auth)await signOut(appState.auth);});
+  els.googleSignIn?.addEventListener("click",async()=>{setAuthError("");if(!appState.auth){setAuthError("Firebase is not configured yet. Add your Firebase web app config values before signing in.");return;}const provider=new appState.firebase.GoogleAuthProvider();try{await appState.firebase.signInWithPopup(appState.auth,provider);}catch(error){console.error(error);setAuthError("Google sign-in failed. Please try again.");}});
+  els.signOut?.addEventListener("click",async()=>{if(appState.auth)await appState.firebase.signOut(appState.auth);});
   els.description.addEventListener("input",()=>{const c=categorize(els.description.value.trim());els.categoryPreview.textContent=`Category preview: ${c}`;els.category.value=c;});
   els.sortOrderSelect.addEventListener("change",render);els.periodSelect.addEventListener("change",render);els.trendRangeSelect.addEventListener("change",render);
   if(els.fdForm) els.fdForm.addEventListener("input",()=>{saveDashboardInputs(getDashboardFormValues());render();});
