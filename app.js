@@ -33,7 +33,17 @@ const categorySummaryElement = document.getElementById("category-summary");
 
 function getTransactions() {
   const raw = localStorage.getItem(STORAGE_KEY);
-  return raw ? JSON.parse(raw) : [];
+
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function saveTransactions(transactions) {
@@ -57,7 +67,34 @@ function formatCurrency(amount) {
 }
 
 function formatDate(isoDate) {
-  return new Date(isoDate).toLocaleString();
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown date";
+  }
+  return date.toLocaleString();
+}
+
+function generateTransactionId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizeTransaction(transaction) {
+  const amountNumber = Number(transaction.amount);
+  const amount = Number.isFinite(amountNumber) ? amountNumber : 0;
+  const description = typeof transaction.description === "string" ? transaction.description : "";
+  const category = CATEGORIES.includes(transaction.category) ? transaction.category : "Other";
+  const createdAt = typeof transaction.createdAt === "string" ? transaction.createdAt : new Date().toISOString();
+
+  return {
+    id: transaction.id ?? generateTransactionId(),
+    amount,
+    description,
+    category,
+    createdAt,
+  };
 }
 
 function deleteTransaction(id) {
@@ -116,7 +153,8 @@ function renderSummary(transactions) {
   }, {});
 
   transactions.forEach((transaction) => {
-    totalsByCategory[transaction.category] += transaction.amount;
+    const category = CATEGORIES.includes(transaction.category) ? transaction.category : "Other";
+    totalsByCategory[category] += transaction.amount;
   });
 
   categorySummaryElement.innerHTML = "";
@@ -135,7 +173,7 @@ function renderSummary(transactions) {
 }
 
 function render() {
-  const transactions = getTransactions();
+  const transactions = getTransactions().map(normalizeTransaction);
   renderTransactions(transactions);
   renderSummary(transactions);
 }
@@ -151,19 +189,19 @@ form.addEventListener("submit", (event) => {
   const amount = Number(amountInput.value);
   const description = descriptionInput.value.trim();
 
-  if (amount <= 0 || !description) {
+  if (!Number.isFinite(amount) || amount <= 0 || !description) {
     return;
   }
 
   const transaction = {
-    id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+    id: generateTransactionId(),
     amount,
     description,
     category: categorize(description),
     createdAt: new Date().toISOString(),
   };
 
-  const transactions = getTransactions();
+  const transactions = getTransactions().map(normalizeTransaction);
   transactions.unshift(transaction);
   saveTransactions(transactions);
 
