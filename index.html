@@ -29,11 +29,19 @@
             <input id="description" name="description" type="text" placeholder="e.g. Uber ride or grocery shopping" autocomplete="off" required class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <p id="category-preview" class="text-sm text-slate-500 mt-1">Category preview: Other</p>
           </div>
-          <div>
-            <label for="category" class="block text-sm font-medium text-slate-700 mb-1">Category</label>
-            <select id="category" name="category" class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option>Food</option><option>Groceries</option><option>Transportation</option><option>Entertainment</option><option>Electronics</option><option>Bills</option><option>Rent</option><option selected>Other</option>
-            </select>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label for="category" class="block text-sm font-medium text-slate-700 mb-1">Category</label>
+              <select id="category" name="category" class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option>Food</option><option>Groceries</option><option>Transportation</option><option>Entertainment</option><option>Electronics</option><option>Bills</option><option>Rent</option><option selected>Other</option>
+              </select>
+            </div>
+            <div>
+              <label for="payment-method" class="block text-sm font-medium text-slate-700 mb-1">Payment Method</label>
+              <select id="payment-method" name="payment-method" class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option selected>Cash</option><option>Debit Card</option><option>Credit Card</option><option>Other</option>
+              </select>
+            </div>
           </div>
           <div class="grid gap-4 sm:grid-cols-2">
             <div>
@@ -114,6 +122,7 @@
           <div class="rounded-lg bg-slate-50 border border-slate-200 p-4"><p class="text-sm text-slate-500">Spent This Month</p><p id="fd-spent-month" class="text-xl font-bold">$0.00</p></div>
           <div class="rounded-lg bg-slate-50 border border-slate-200 p-4"><p class="text-sm text-slate-500">Money Left This Month</p><p id="fd-remaining" class="text-xl font-bold">$0.00</p><p class="text-xs text-slate-500 mt-1">What you still have available after spending.</p></div>
           <div class="rounded-lg bg-slate-50 border border-slate-200 p-4 sm:col-span-2 lg:col-span-1"><p class="text-sm text-slate-500">Planned Daily Budget</p><p id="fd-safe-today" class="text-xl font-bold">$0.00</p><p class="text-xs text-slate-500 mt-1">How much you can spend per day for the rest of this month.</p></div>
+          <div class="rounded-lg bg-slate-50 border border-slate-200 p-4 sm:col-span-2 lg:col-span-3"><p class="text-sm text-slate-500">Credit Summary</p><div class="mt-2 grid gap-2 sm:grid-cols-3 text-sm"><p><span class="text-slate-500">Credit Used:</span> <strong id="fd-credit-used">$0.00</strong></p><p><span class="text-slate-500">Credit Left:</span> <strong id="fd-credit-left">$0.00</strong></p><p><span class="text-slate-500">Utilization:</span> <strong id="fd-credit-utilization">0%</strong></p></div></div>
         </div>
         <div id="fd-month-warning" class="hidden mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">You are over your planned monthly budget.</div>
 
@@ -245,7 +254,29 @@
       <div class="grid gap-4 sm:grid-cols-2">
         <article class="bg-white rounded-xl border border-slate-200 p-4"><h3 class="font-semibold">Budget and Goals</h3><p class="text-sm text-slate-600 mt-1">Set category budgets and savings targets with progress tracking.</p><button class="mt-3 rounded-lg border border-slate-300 px-3 py-2 text-sm">Set up</button></article>
         <article class="bg-white rounded-xl border border-slate-200 p-4"><h3 class="font-semibold">Spending Warnings</h3><p class="text-sm text-slate-600 mt-1">Receive alerts when category spending exceeds your limits.</p><button class="mt-3 rounded-lg bg-slate-900 text-white px-3 py-2 text-sm">Coming soon</button></article>
-        <article class="bg-white rounded-xl border border-slate-200 p-4"><h3 class="font-semibold">Credit Card Tracker</h3><p class="text-sm text-slate-600 mt-1">Track statement balances, due dates, and utilization at a glance.</p><button class="mt-3 rounded-lg border border-slate-300 px-3 py-2 text-sm">Set up</button></article>
+        <section class="bg-white rounded-xl border border-slate-200 p-4 sm:col-span-2">
+          <h3 class="font-semibold">Credit Card Tracker</h3>
+          <p class="text-sm text-slate-600 mt-1">Track card settings, this month’s credit spending, utilization, and due date.</p>
+          <form id="cc-form" class="grid gap-3 mt-4 sm:grid-cols-2">
+            <div><label for="cc-card-name" class="block text-sm text-slate-600 mb-1">Card name</label><input id="cc-card-name" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+            <div><label for="cc-limit" class="block text-sm text-slate-600 mb-1">Credit limit</label><input id="cc-limit" type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+            <div><label for="cc-balance" class="block text-sm text-slate-600 mb-1">Current / previous balance</label><input id="cc-balance" type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+            <div><label for="cc-due-date" class="block text-sm text-slate-600 mb-1">Payment due date</label><input id="cc-due-date" type="date" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+          </form>
+          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 mt-4">
+            <div class="rounded-lg bg-slate-50 border border-slate-200 p-3"><p class="text-xs text-slate-500">Credit Limit</p><p id="cc-limit-summary" class="font-bold">$0.00</p></div>
+            <div class="rounded-lg bg-slate-50 border border-slate-200 p-3"><p class="text-xs text-slate-500">Credit Spent This Month</p><p id="cc-spent-month" class="font-bold">$0.00</p></div>
+            <div class="rounded-lg bg-slate-50 border border-slate-200 p-3"><p class="text-xs text-slate-500">Total Credit Used</p><p id="cc-total-used" class="font-bold">$0.00</p></div>
+            <div class="rounded-lg bg-slate-50 border border-slate-200 p-3"><p class="text-xs text-slate-500">Credit Left</p><p id="cc-left" class="font-bold">$0.00</p></div>
+            <div class="rounded-lg bg-slate-50 border border-slate-200 p-3"><p class="text-xs text-slate-500">Credit Utilization</p><p id="cc-utilization" class="font-bold">0%</p></div>
+            <div class="rounded-lg bg-slate-50 border border-slate-200 p-3"><p class="text-xs text-slate-500">Payment Due Date</p><p id="cc-due-summary" class="font-bold">Not set</p></div>
+          </div>
+          <div id="cc-warning-util" class="hidden mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Credit utilization is high. Try to keep it below 70%.</div>
+          <div id="cc-warning-limit" class="hidden mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">You have exceeded your credit limit.</div>
+          <div id="cc-warning-budget" class="hidden mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Your credit card spending is higher than your remaining monthly budget.</div>
+          <h4 class="font-medium mt-4 mb-2">This Month’s Credit Card Transactions</h4>
+          <ul id="cc-transaction-list" class="space-y-2 text-sm"></ul>
+        </section>
         <article class="bg-white rounded-xl border border-slate-200 p-4"><h3 class="font-semibold">Monthly Bills</h3><p class="text-sm text-slate-600 mt-1">Organize recurring payments and prepare for upcoming bill cycles.</p><button class="mt-3 rounded-lg bg-slate-900 text-white px-3 py-2 text-sm">Coming soon</button></article>
       </div>
     </section>
