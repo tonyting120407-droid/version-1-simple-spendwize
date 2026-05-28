@@ -135,12 +135,87 @@
         <form id="fd-form" class="grid gap-3 mt-5 sm:grid-cols-2">
           <div><label class="block text-sm text-slate-600 mb-1" for="fd-tax-amount">Tax amount</label><input id="fd-tax-amount" type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
           <div><label class="block text-sm text-slate-600 mb-1" for="fd-tax-type">Tax type</label><select id="fd-tax-type" class="w-full rounded-lg border border-slate-300 px-3 py-2"><option value="monthly">Monthly amount</option><option value="yearly">Yearly amount</option><option value="percentage">Percentage</option></select></div>
-          <div><label class="block text-sm text-slate-600 mb-1" for="fd-fixed-bills">Fixed bills</label><input id="fd-fixed-bills" type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
-          <div><label class="block text-sm text-slate-600 mb-1" for="fd-subscriptions">Subscriptions</label><input id="fd-subscriptions" type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
-          <div><label class="block text-sm text-slate-600 mb-1" for="fd-savings-goal">Savings goal</label><input id="fd-savings-goal" type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
-          <div><label class="block text-sm text-slate-600 mb-1" for="fd-emergency-goal">Emergency fund goal</label><input id="fd-emergency-goal" type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
-          <div class="sm:col-span-2"><label class="block text-sm text-slate-600 mb-1" for="fd-other-deductions">Other deductions</label><input id="fd-other-deductions" type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
         </form>
+        <section class="mt-4 rounded-lg border border-slate-200 p-4" data-deduction-section="fixedBills" data-storage-key="spendwise_fixed_bills">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <h4 class="font-semibold">Fixed Bills</h4>
+            <button type="button" class="deduction-add rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">+ Add Fixed Bill</button>
+          </div>
+          <div class="deduction-form-wrap hidden rounded-lg border border-slate-200 p-3 mb-3">
+            <form class="deduction-form grid gap-3 sm:grid-cols-2">
+              <div><label class="block text-sm text-slate-600 mb-1">Item name</label><input name="name" required class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div><label class="block text-sm text-slate-600 mb-1">Amount</label><input name="amount" type="number" min="0" step="0.01" required class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div><label class="block text-sm text-slate-600 mb-1">Frequency</label><select name="frequency" class="w-full rounded-lg border border-slate-300 px-3 py-2"><option value="monthly">Monthly</option><option value="yearly">Yearly</option><option value="weekly">Weekly</option><option value="onetime">One-time</option></select></div>
+              <div class="deduction-date-wrap hidden"><label class="block text-sm text-slate-600 mb-1">Date</label><input name="dateReceived" type="date" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div class="sm:col-span-2 flex gap-2"><button type="submit" class="rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">Save Item</button><button type="button" class="deduction-cancel rounded-lg border border-slate-300 px-3 py-2 text-sm">Cancel</button></div>
+            </form>
+          </div>
+          <ul class="deduction-list space-y-2"></ul>
+        </section>
+        <section class="mt-4 rounded-lg border border-slate-200 p-4" data-deduction-section="subscriptions" data-storage-key="spendwise_subscriptions">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <h4 class="font-semibold">Subscriptions</h4>
+            <button type="button" class="deduction-add rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">+ Add Subscription</button>
+          </div>
+          <div class="deduction-form-wrap hidden rounded-lg border border-slate-200 p-3 mb-3">
+            <form class="deduction-form grid gap-3 sm:grid-cols-2">
+              <div><label class="block text-sm text-slate-600 mb-1">Item name</label><input name="name" required class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div><label class="block text-sm text-slate-600 mb-1">Amount</label><input name="amount" type="number" min="0" step="0.01" required class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div><label class="block text-sm text-slate-600 mb-1">Frequency</label><select name="frequency" class="w-full rounded-lg border border-slate-300 px-3 py-2"><option value="monthly">Monthly</option><option value="yearly">Yearly</option><option value="weekly">Weekly</option><option value="onetime">One-time</option></select></div>
+              <div class="deduction-date-wrap hidden"><label class="block text-sm text-slate-600 mb-1">Date</label><input name="dateReceived" type="date" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div class="sm:col-span-2 flex gap-2"><button type="submit" class="rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">Save Item</button><button type="button" class="deduction-cancel rounded-lg border border-slate-300 px-3 py-2 text-sm">Cancel</button></div>
+            </form>
+          </div>
+          <ul class="deduction-list space-y-2"></ul>
+        </section>
+        <section class="mt-4 rounded-lg border border-slate-200 p-4" data-deduction-section="savingsGoals" data-storage-key="spendwise_savings_goals">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <h4 class="font-semibold">Savings Goals</h4>
+            <button type="button" class="deduction-add rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">+ Add Savings Goal</button>
+          </div>
+          <div class="deduction-form-wrap hidden rounded-lg border border-slate-200 p-3 mb-3">
+            <form class="deduction-form grid gap-3 sm:grid-cols-2">
+              <div><label class="block text-sm text-slate-600 mb-1">Item name</label><input name="name" required class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div><label class="block text-sm text-slate-600 mb-1">Amount</label><input name="amount" type="number" min="0" step="0.01" required class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div><label class="block text-sm text-slate-600 mb-1">Frequency</label><select name="frequency" class="w-full rounded-lg border border-slate-300 px-3 py-2"><option value="monthly">Monthly</option><option value="yearly">Yearly</option><option value="weekly">Weekly</option><option value="onetime">One-time</option></select></div>
+              <div class="deduction-date-wrap hidden"><label class="block text-sm text-slate-600 mb-1">Date</label><input name="dateReceived" type="date" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div class="sm:col-span-2 flex gap-2"><button type="submit" class="rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">Save Item</button><button type="button" class="deduction-cancel rounded-lg border border-slate-300 px-3 py-2 text-sm">Cancel</button></div>
+            </form>
+          </div>
+          <ul class="deduction-list space-y-2"></ul>
+        </section>
+        <section class="mt-4 rounded-lg border border-slate-200 p-4" data-deduction-section="emergencyFundGoals" data-storage-key="spendwise_emergency_fund_goals">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <h4 class="font-semibold">Emergency Fund Goals</h4>
+            <button type="button" class="deduction-add rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">+ Add Emergency Fund Goal</button>
+          </div>
+          <div class="deduction-form-wrap hidden rounded-lg border border-slate-200 p-3 mb-3">
+            <form class="deduction-form grid gap-3 sm:grid-cols-2">
+              <div><label class="block text-sm text-slate-600 mb-1">Item name</label><input name="name" required class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div><label class="block text-sm text-slate-600 mb-1">Amount</label><input name="amount" type="number" min="0" step="0.01" required class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div><label class="block text-sm text-slate-600 mb-1">Frequency</label><select name="frequency" class="w-full rounded-lg border border-slate-300 px-3 py-2"><option value="monthly">Monthly</option><option value="yearly">Yearly</option><option value="weekly">Weekly</option><option value="onetime">One-time</option></select></div>
+              <div class="deduction-date-wrap hidden"><label class="block text-sm text-slate-600 mb-1">Date</label><input name="dateReceived" type="date" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div class="sm:col-span-2 flex gap-2"><button type="submit" class="rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">Save Item</button><button type="button" class="deduction-cancel rounded-lg border border-slate-300 px-3 py-2 text-sm">Cancel</button></div>
+            </form>
+          </div>
+          <ul class="deduction-list space-y-2"></ul>
+        </section>
+        <section class="mt-4 rounded-lg border border-slate-200 p-4" data-deduction-section="otherDeductions" data-storage-key="spendwise_other_deductions">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <h4 class="font-semibold">Other Deductions</h4>
+            <button type="button" class="deduction-add rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">+ Add Other Deduction</button>
+          </div>
+          <div class="deduction-form-wrap hidden rounded-lg border border-slate-200 p-3 mb-3">
+            <form class="deduction-form grid gap-3 sm:grid-cols-2">
+              <div><label class="block text-sm text-slate-600 mb-1">Item name</label><input name="name" required class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div><label class="block text-sm text-slate-600 mb-1">Amount</label><input name="amount" type="number" min="0" step="0.01" required class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div><label class="block text-sm text-slate-600 mb-1">Frequency</label><select name="frequency" class="w-full rounded-lg border border-slate-300 px-3 py-2"><option value="monthly">Monthly</option><option value="yearly">Yearly</option><option value="weekly">Weekly</option><option value="onetime">One-time</option></select></div>
+              <div class="deduction-date-wrap hidden"><label class="block text-sm text-slate-600 mb-1">Date</label><input name="dateReceived" type="date" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div class="sm:col-span-2 flex gap-2"><button type="submit" class="rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">Save Item</button><button type="button" class="deduction-cancel rounded-lg border border-slate-300 px-3 py-2 text-sm">Cancel</button></div>
+            </form>
+          </div>
+          <ul class="deduction-list space-y-2"></ul>
+        </section>
       </section>
 
       <div class="grid gap-4 sm:grid-cols-2">
