@@ -1,18 +1,6 @@
 const STORAGE_KEY = "spendwise_transactions";
-
-const CATEGORIES = [
-  "Food",
-  "Groceries",
-  "Transportation",
-  "Entertainment",
-  "Electronics",
-  "Bills",
-  "Rent",
-  "Other",
-];
-
+const CATEGORIES = ["Food", "Groceries", "Transportation", "Entertainment", "Electronics", "Bills", "Rent", "Other"];
 const PERIOD_FILTERS = ["daily", "weekly", "monthly", "yearly", "all"];
-const SORT_OPTIONS = ["newest", "oldest"];
 
 const categoryKeywords = {
   Food: ["coffee", "lunch", "dinner", "burger", "restaurant", "pizza", "meal"],
@@ -24,283 +12,184 @@ const categoryKeywords = {
   Rent: ["rent", "apartment", "lease", "landlord"],
 };
 
-let form;
-let amountInput;
-let descriptionInput;
-let purchaseDateInput;
-let purchaseTimeInput;
-let categoryPreview;
-let transactionList;
-let emptyState;
-let totalSpentElement;
-let transactionCountElement;
-let categorySummaryElement;
-let formMessage;
-let sortOrderSelect;
-let periodSelect;
+let state = { editingId: null };
+let els = {};
+
+const $ = (id) => document.getElementById(id);
 
 function getTransactions() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return [];
-
   try {
-    const parsed = JSON.parse(raw);
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 }
 
-function saveTransactions(transactions) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
+function saveTransactions(txns) { localStorage.setItem(STORAGE_KEY, JSON.stringify(txns)); }
+
+function generateTransactionId() {
+  return (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function categorize(description) {
   const text = description.toLowerCase();
-
   for (const [category, keywords] of Object.entries(categoryKeywords)) {
-    if (keywords.some((keyword) => text.includes(keyword))) {
-      return category;
-    }
+    if (keywords.some((k) => text.includes(k))) return category;
   }
-
   return "Other";
 }
 
-function formatCurrency(amount) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
-}
-
-function formatDate(dateISO) {
-  const date = new Date(dateISO);
-  if (Number.isNaN(date.getTime())) return "Unknown date";
-  return date.toLocaleDateString();
-}
-
-function formatTime(dateISO) {
-  const date = new Date(dateISO);
-  if (Number.isNaN(date.getTime())) return "Unknown time";
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
 function parsePurchaseDateTime(dateStr, timeStr) {
-  if (!dateStr) return new Date().toISOString();
-  const combined = `${dateStr}T${timeStr || "00:00"}:00`;
-  const date = new Date(combined);
-  if (Number.isNaN(date.getTime())) return new Date().toISOString();
-  return date.toISOString();
+  const d = new Date(`${dateStr}T${timeStr || "00:00"}:00`);
+  return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
 }
 
-function setDefaultPurchaseDateTime() {
-  const now = new Date();
-  purchaseDateInput.value = now.toISOString().slice(0, 10);
-  purchaseTimeInput.value = now.toTimeString().slice(0, 5);
+function splitDateTime(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { date: "", time: "" };
+  return { date: d.toISOString().slice(0, 10), time: d.toTimeString().slice(0, 5) };
 }
 
-function generateTransactionId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function normalizeTransaction(transaction) {
-  const amountNumber = Number(transaction.amount);
-  const amount = Number.isFinite(amountNumber) ? amountNumber : 0;
-  const description = typeof transaction.description === "string" ? transaction.description : "";
-  const category = CATEGORIES.includes(transaction.category) ? transaction.category : "Other";
-
-  // backward compatibility: if purchaseAt missing, fall back to createdAt
-  const fallback = typeof transaction.createdAt === "string" ? transaction.createdAt : new Date().toISOString();
-  const purchaseAtRaw = typeof transaction.purchaseAt === "string" ? transaction.purchaseAt : fallback;
-  const purchaseAtDate = new Date(purchaseAtRaw);
-  const purchaseAt = Number.isNaN(purchaseAtDate.getTime()) ? new Date().toISOString() : purchaseAtDate.toISOString();
-
+function normalizeTransaction(t) {
+  const fallback = typeof t.createdAt === "string" ? t.createdAt : new Date().toISOString();
+  const purchaseRaw = typeof t.purchaseAt === "string" ? t.purchaseAt : fallback;
+  const purchase = new Date(purchaseRaw);
   return {
-    id: transaction.id ?? generateTransactionId(),
-    amount,
-    description,
-    category,
-    purchaseAt,
+    id: t.id ?? generateTransactionId(),
+    amount: Number.isFinite(Number(t.amount)) ? Number(t.amount) : 0,
+    description: typeof t.description === "string" ? t.description : "",
+    category: CATEGORIES.includes(t.category) ? t.category : "Other",
+    purchaseAt: Number.isNaN(purchase.getTime()) ? new Date().toISOString() : purchase.toISOString(),
     createdAt: fallback,
   };
 }
 
-function sortTransactions(transactions) {
-  const sortValue = SORT_OPTIONS.includes(sortOrderSelect.value) ? sortOrderSelect.value : "newest";
-  const dir = sortValue === "oldest" ? 1 : -1;
-  return [...transactions].sort((a, b) => (new Date(a.purchaseAt).getTime() - new Date(b.purchaseAt).getTime()) * dir);
-}
+function formatCurrency(v) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v); }
 
-function filterTransactionsByPeriod(transactions) {
-  const period = PERIOD_FILTERS.includes(periodSelect.value) ? periodSelect.value : "all";
-  if (period === "all") return transactions;
-
+function filterByPeriod(txns) {
+  const period = PERIOD_FILTERS.includes(els.periodSelect.value) ? els.periodSelect.value : "all";
+  if (period === "all") return txns;
   const now = new Date();
-  return transactions.filter((transaction) => {
-    const purchaseDate = new Date(transaction.purchaseAt);
-    if (Number.isNaN(purchaseDate.getTime())) return false;
-
-    if (period === "daily") {
-      return purchaseDate.toDateString() === now.toDateString();
-    }
-
-    if (period === "weekly") {
-      const diff = now.getTime() - purchaseDate.getTime();
-      return diff >= 0 && diff <= 7 * 24 * 60 * 60 * 1000;
-    }
-
-    if (period === "monthly") {
-      return purchaseDate.getFullYear() === now.getFullYear() && purchaseDate.getMonth() === now.getMonth();
-    }
-
-    return purchaseDate.getFullYear() === now.getFullYear();
+  return txns.filter((t) => {
+    const d = new Date(t.purchaseAt);
+    if (period === "daily") return d.toDateString() === now.toDateString();
+    if (period === "weekly") return now.getTime() - d.getTime() <= 604800000 && now.getTime() >= d.getTime();
+    if (period === "monthly") return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    return d.getFullYear() === now.getFullYear();
   });
 }
 
-function setFormMessage(message = "") {
-  formMessage.textContent = message;
-  formMessage.classList.toggle("hidden", !message);
+function sortedTxns(txns) {
+  const factor = els.sortOrderSelect.value === "oldest" ? 1 : -1;
+  return [...txns].sort((a, b) => (new Date(a.purchaseAt) - new Date(b.purchaseAt)) * factor);
 }
 
-function deleteTransaction(id) {
-  const transactions = getTransactions().map(normalizeTransaction).filter((transaction) => transaction.id !== id);
-  saveTransactions(transactions);
-  render();
+function renderSummary(txns) {
+  const filtered = filterByPeriod(txns);
+  els.totalSpent.textContent = formatCurrency(filtered.reduce((s, t) => s + t.amount, 0));
+  els.transactionCount.textContent = String(filtered.length);
+  const totals = Object.fromEntries(CATEGORIES.map((c) => [c, 0]));
+  filtered.forEach((t) => { totals[t.category] += t.amount; });
+  els.categorySummary.innerHTML = "";
+  CATEGORIES.forEach((c) => {
+    const li = document.createElement("li");
+    li.className = "flex justify-between rounded-md border border-slate-200 px-3 py-2 bg-white";
+    li.textContent = `${c}: ${formatCurrency(totals[c])}`;
+    els.categorySummary.appendChild(li);
+  });
 }
 
-function renderTransactions(transactions) {
-  transactionList.innerHTML = "";
-  emptyState.style.display = transactions.length ? "none" : "block";
+function startEdit(txn) {
+  state.editingId = txn.id;
+  els.amount.value = txn.amount;
+  els.description.value = txn.description;
+  els.category.value = txn.category;
+  const dt = splitDateTime(txn.purchaseAt);
+  els.purchaseDate.value = dt.date;
+  els.purchaseTime.value = dt.time;
+  els.saveButton.textContent = "Update Transaction";
+  els.cancelEdit.classList.remove("hidden");
+}
 
-  transactions.forEach((transaction) => {
+function stopEdit() {
+  state.editingId = null;
+  els.form.reset();
+  setDefaultDateTime();
+  els.saveButton.textContent = "Save Transaction";
+  els.cancelEdit.classList.add("hidden");
+  els.categoryPreview.textContent = "Category preview: Other";
+}
+
+function renderTransactions(txns) {
+  els.transactionList.innerHTML = "";
+  els.emptyState.style.display = txns.length ? "none" : "block";
+  txns.forEach((t) => {
     const li = document.createElement("li");
     li.className = "rounded-lg border border-slate-200 p-3 sm:p-4 bg-slate-50 flex items-start justify-between gap-4";
-
-    const details = document.createElement("div");
-    details.innerHTML = `
-      <p class="font-semibold text-lg">${formatCurrency(transaction.amount)}</p>
-      <p class="text-slate-700">${transaction.description}</p>
-      <p class="text-sm text-slate-500">Category: ${transaction.category}</p>
-      <p class="text-sm text-slate-500">Purchase Date: ${formatDate(transaction.purchaseAt)}</p>
-      <p class="text-sm text-slate-500">Purchase Time: ${formatTime(transaction.purchaseAt)}</p>
-    `;
-
-    const deleteButton = document.createElement("button");
-    deleteButton.type = "button";
-    deleteButton.textContent = "Delete";
-    deleteButton.className = "rounded-lg bg-rose-600 px-3 py-2 text-white text-sm font-medium hover:bg-rose-700 transition";
-    deleteButton.addEventListener("click", () => deleteTransaction(transaction.id));
-
-    li.append(details, deleteButton);
-    transactionList.appendChild(li);
-  });
-}
-
-function renderSummary(filteredTransactions) {
-  const total = filteredTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
-  totalSpentElement.textContent = formatCurrency(total);
-  transactionCountElement.textContent = String(filteredTransactions.length);
-
-  const totalsByCategory = CATEGORIES.reduce((acc, category) => {
-    acc[category] = 0;
-    return acc;
-  }, {});
-
-  filteredTransactions.forEach((transaction) => {
-    totalsByCategory[transaction.category] += transaction.amount;
-  });
-
-  categorySummaryElement.innerHTML = "";
-  CATEGORIES.forEach((category) => {
-    const item = document.createElement("li");
-    item.className = "flex justify-between rounded-md border border-slate-200 px-3 py-2 bg-white";
-    const left = document.createElement("span");
-    left.textContent = category;
-    const right = document.createElement("span");
-    right.className = "font-medium";
-    right.textContent = formatCurrency(totalsByCategory[category]);
-    item.append(left, right);
-    categorySummaryElement.appendChild(item);
+    const left = document.createElement("div");
+    left.innerHTML = `<p class="font-semibold text-lg">${formatCurrency(t.amount)}</p><p>${t.description}</p><p class="text-sm text-slate-500">Category: ${t.category}</p><p class="text-sm text-slate-500">${new Date(t.purchaseAt).toLocaleString()}</p>`;
+    const actions = document.createElement("div"); actions.className = "flex gap-2";
+    const edit = document.createElement("button"); edit.type = "button"; edit.textContent = "Edit"; edit.className = "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"; edit.addEventListener("click", () => startEdit(t));
+    const del = document.createElement("button"); del.type = "button"; del.textContent = "Delete"; del.className = "rounded-lg bg-rose-600 px-3 py-2 text-white text-sm"; del.addEventListener("click", () => { saveTransactions(getTransactions().map(normalizeTransaction).filter((x) => x.id !== t.id)); if (state.editingId === t.id) stopEdit(); render(); });
+    actions.append(edit, del); li.append(left, actions); els.transactionList.appendChild(li);
   });
 }
 
 function render() {
-  const normalized = getTransactions().map(normalizeTransaction);
-  const sorted = sortTransactions(normalized);
-  renderTransactions(sorted);
-  const filtered = filterTransactionsByPeriod(sorted);
-  renderSummary(filtered);
+  const txns = sortedTxns(getTransactions().map(normalizeTransaction));
+  renderTransactions(txns);
+  renderSummary(txns);
 }
 
-function initElements() {
-  form = document.getElementById("transaction-form");
-  amountInput = document.getElementById("amount");
-  descriptionInput = document.getElementById("description");
-  purchaseDateInput = document.getElementById("purchase-date");
-  purchaseTimeInput = document.getElementById("purchase-time");
-  categoryPreview = document.getElementById("category-preview");
-  transactionList = document.getElementById("transaction-list");
-  emptyState = document.getElementById("empty-state");
-  totalSpentElement = document.getElementById("total-spent");
-  transactionCountElement = document.getElementById("transaction-count");
-  categorySummaryElement = document.getElementById("category-summary");
-  formMessage = document.getElementById("form-message");
-  sortOrderSelect = document.getElementById("sort-order");
-  periodSelect = document.getElementById("summary-period");
-
-  return Boolean(
-    form && amountInput && descriptionInput && purchaseDateInput && purchaseTimeInput &&
-    categoryPreview && transactionList && emptyState && totalSpentElement &&
-    transactionCountElement && categorySummaryElement && formMessage && sortOrderSelect && periodSelect
-  );
+function setDefaultDateTime() {
+  const now = new Date();
+  els.purchaseDate.value = now.toISOString().slice(0, 10);
+  els.purchaseTime.value = now.toTimeString().slice(0, 5);
 }
 
-function bindEvents() {
-  descriptionInput.addEventListener("input", () => {
-    setFormMessage("");
-    categoryPreview.textContent = `Category preview: ${categorize(descriptionInput.value.trim())}`;
+function bind() {
+  els.description.addEventListener("input", () => {
+    const c = categorize(els.description.value.trim());
+    els.categoryPreview.textContent = `Category preview: ${c}`;
+    if (!state.editingId) els.category.value = c;
   });
+  els.sortOrderSelect.addEventListener("change", render);
+  els.periodSelect.addEventListener("change", render);
+  els.cancelEdit.addEventListener("click", stopEdit);
+  $("open-advanced").addEventListener("click", () => { $("simple-mode").classList.add("hidden"); $("advanced-mode").classList.remove("hidden"); });
+  $("back-simple").addEventListener("click", () => { $("advanced-mode").classList.add("hidden"); $("simple-mode").classList.remove("hidden"); });
 
-  sortOrderSelect.addEventListener("change", render);
-  periodSelect.addEventListener("change", render);
-
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-
-    const amount = Number(amountInput.value);
-    const description = descriptionInput.value.trim();
-    const purchaseAt = parsePurchaseDateTime(purchaseDateInput.value, purchaseTimeInput.value);
-
-    if (!Number.isFinite(amount) || amount <= 0 || !description) {
-      setFormMessage("Please enter a valid amount greater than 0 and a description.");
-      return;
-    }
-
-    const transaction = {
-      id: generateTransactionId(),
+  els.form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const amount = Number(els.amount.value);
+    const description = els.description.value.trim();
+    if (!Number.isFinite(amount) || amount <= 0 || !description) return;
+    const txns = getTransactions().map(normalizeTransaction);
+    const updated = {
+      id: state.editingId ?? generateTransactionId(),
       amount,
       description,
-      category: categorize(description),
-      purchaseAt,
+      category: CATEGORIES.includes(els.category.value) ? els.category.value : categorize(description),
+      purchaseAt: parsePurchaseDateTime(els.purchaseDate.value, els.purchaseTime.value),
       createdAt: new Date().toISOString(),
     };
-
-    const transactions = getTransactions().map(normalizeTransaction);
-    transactions.push(transaction);
-    saveTransactions(transactions);
-
-    form.reset();
-    setDefaultPurchaseDateTime();
-    categoryPreview.textContent = "Category preview: Other";
-    setFormMessage("");
-    amountInput.focus();
+    const next = state.editingId ? txns.map((t) => (t.id === state.editingId ? { ...t, ...updated } : t)) : [...txns, updated];
+    saveTransactions(next);
+    stopEdit();
     render();
   });
 }
 
-if (initElements()) {
-  setDefaultPurchaseDateTime();
-  bindEvents();
+function init() {
+  els = {
+    form: $("transaction-form"), amount: $("amount"), description: $("description"), category: $("category"), purchaseDate: $("purchase-date"), purchaseTime: $("purchase-time"), categoryPreview: $("category-preview"), transactionList: $("transaction-list"), emptyState: $("empty-state"), totalSpent: $("total-spent"), transactionCount: $("transaction-count"), categorySummary: $("category-summary"), saveButton: $("save-button"), cancelEdit: $("cancel-edit"), sortOrderSelect: $("sort-order"), periodSelect: $("summary-period")
+  };
+  if (Object.values(els).some((v) => !v)) return;
+  setDefaultDateTime();
+  bind();
   render();
 }
+
+init();

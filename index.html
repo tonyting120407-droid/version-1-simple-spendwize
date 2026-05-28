@@ -8,81 +8,93 @@
 </head>
 <body class="bg-slate-100 text-slate-900 min-h-screen">
   <main class="max-w-4xl mx-auto px-4 py-8">
-    <header class="mb-6">
-      <h1 class="text-3xl font-bold tracking-tight">SpendWise</h1>
-      <p class="text-slate-600 mt-1">Track purchases, auto-categorize spending, and view quick insights.</p>
+    <header class="mb-6 flex items-start justify-between gap-3">
+      <div>
+        <h1 class="text-3xl font-bold tracking-tight">SpendWise</h1>
+        <p class="text-slate-600 mt-1">Track purchases, auto-categorize spending, and view quick insights.</p>
+      </div>
+      <button id="open-advanced" type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Advanced Mode</button>
     </header>
 
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6 mb-6">
-      <h2 class="text-xl font-semibold mb-4">Add Transaction</h2>
-      <form id="transaction-form" class="grid gap-4">
-        <div>
-          <label for="amount" class="block text-sm font-medium text-slate-700 mb-1">Amount ($)</label>
-          <input id="amount" name="amount" type="number" min="0" step="0.01" inputmode="decimal" required class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
-        <div>
-          <label for="description" class="block text-sm font-medium text-slate-700 mb-1">Description</label>
-          <input id="description" name="description" type="text" placeholder="e.g. Uber ride or grocery shopping" autocomplete="off" required class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <p id="category-preview" class="text-sm text-slate-500 mt-1">Category preview: Other</p>
+    <section id="simple-mode" class="space-y-6">
+      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6">
+        <h2 class="text-xl font-semibold mb-4">Add Transaction</h2>
+        <form id="transaction-form" class="grid gap-4">
+          <div>
+            <label for="amount" class="block text-sm font-medium text-slate-700 mb-1">Amount ($)</label>
+            <input id="amount" name="amount" type="number" min="0" step="0.01" inputmode="decimal" required class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label for="description" class="block text-sm font-medium text-slate-700 mb-1">Description</label>
+            <input id="description" name="description" type="text" placeholder="e.g. Uber ride or grocery shopping" autocomplete="off" required class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <p id="category-preview" class="text-sm text-slate-500 mt-1">Category preview: Other</p>
+          </div>
+          <div>
+            <label for="category" class="block text-sm font-medium text-slate-700 mb-1">Category</label>
+            <select id="category" name="category" class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option>Food</option><option>Groceries</option><option>Transportation</option><option>Entertainment</option><option>Electronics</option><option>Bills</option><option>Rent</option><option selected>Other</option>
+            </select>
+          </div>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label for="purchase-date" class="block text-sm font-medium text-slate-700 mb-1">Date of Purchase</label>
+              <input id="purchase-date" name="purchase-date" type="date" required class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label for="purchase-time" class="block text-sm font-medium text-slate-700 mb-1">Time of Purchase</label>
+              <input id="purchase-time" name="purchase-time" type="time" required class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+          <p id="form-message" class="text-sm text-rose-600 hidden"></p>
+          <div class="flex flex-wrap gap-2">
+            <button id="save-button" type="submit" class="inline-flex justify-center rounded-lg bg-blue-600 px-4 py-2 text-white font-medium hover:bg-blue-700 transition">Save Transaction</button>
+            <button id="cancel-edit" type="button" class="hidden inline-flex justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-700 font-medium hover:bg-slate-50 transition">Cancel Edit</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+          <h2 class="text-xl font-semibold">Summary</h2>
+          <div>
+            <label for="summary-period" class="block text-xs font-medium text-slate-600 mb-1">Time Period</label>
+            <select id="summary-period" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option><option value="all" selected>All time</option>
+            </select>
+          </div>
         </div>
         <div class="grid gap-4 sm:grid-cols-2">
+          <div class="rounded-lg bg-slate-50 p-4 border border-slate-200"><p class="text-sm text-slate-500">Total Spent</p><p id="total-spent" class="text-2xl font-bold">$0.00</p></div>
+          <div class="rounded-lg bg-slate-50 p-4 border border-slate-200"><p class="text-sm text-slate-500">Transactions</p><p id="transaction-count" class="text-2xl font-bold">0</p></div>
+        </div>
+        <div class="mt-4"><h3 class="font-medium mb-2">Spending by Category</h3><ul id="category-summary" class="space-y-2 text-sm"></ul></div>
+      </section>
+
+      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+          <h2 class="text-xl font-semibold">Saved Transactions</h2>
           <div>
-            <label for="purchase-date" class="block text-sm font-medium text-slate-700 mb-1">Date of Purchase</label>
-            <input id="purchase-date" name="purchase-date" type="date" required class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
-          <div>
-            <label for="purchase-time" class="block text-sm font-medium text-slate-700 mb-1">Time of Purchase</label>
-            <input id="purchase-time" name="purchase-time" type="time" required class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <label for="sort-order" class="block text-xs font-medium text-slate-600 mb-1">Sort Order</label>
+            <select id="sort-order" class="rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="newest" selected>Newest first</option><option value="oldest">Oldest first</option></select>
           </div>
         </div>
-        <p id="form-message" class="text-sm text-rose-600 hidden"></p>
-        <button type="submit" class="w-full sm:w-auto inline-flex justify-center rounded-lg bg-blue-600 px-4 py-2 text-white font-medium hover:bg-blue-700 transition">Save Transaction</button>
-      </form>
+        <ul id="transaction-list" class="space-y-3"></ul>
+        <p id="empty-state" class="text-slate-500">No transactions yet.</p>
+      </section>
     </section>
 
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6 mb-6">
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
-        <h2 class="text-xl font-semibold">Summary</h2>
-        <div>
-          <label for="summary-period" class="block text-xs font-medium text-slate-600 mb-1">Time Period</label>
-          <select id="summary-period" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-            <option value="daily">Daily</option>
-            <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
-            <option value="yearly">Yearly</option>
-            <option value="all" selected>All time</option>
-          </select>
-        </div>
+    <section id="advanced-mode" class="hidden space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-2xl font-semibold">Advanced Mode</h2>
+        <button id="back-simple" type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Back to Simple Mode</button>
       </div>
       <div class="grid gap-4 sm:grid-cols-2">
-        <div class="rounded-lg bg-slate-50 p-4 border border-slate-200">
-          <p class="text-sm text-slate-500">Total Spent</p>
-          <p id="total-spent" class="text-2xl font-bold">$0.00</p>
-        </div>
-        <div class="rounded-lg bg-slate-50 p-4 border border-slate-200">
-          <p class="text-sm text-slate-500">Transactions</p>
-          <p id="transaction-count" class="text-2xl font-bold">0</p>
-        </div>
+        <article class="bg-white rounded-xl border border-slate-200 p-4"><h3 class="font-semibold">Financial Dashboard</h3><p class="text-sm text-slate-600 mt-1">Portfolio-style overview of income, spending, and trends.</p><button class="mt-3 rounded-lg bg-slate-900 text-white px-3 py-2 text-sm">Coming soon</button></article>
+        <article class="bg-white rounded-xl border border-slate-200 p-4"><h3 class="font-semibold">Budget and Goals</h3><p class="text-sm text-slate-600 mt-1">Set category budgets and savings targets with progress tracking.</p><button class="mt-3 rounded-lg border border-slate-300 px-3 py-2 text-sm">Set up</button></article>
+        <article class="bg-white rounded-xl border border-slate-200 p-4"><h3 class="font-semibold">Spending Warnings</h3><p class="text-sm text-slate-600 mt-1">Receive alerts when category spending exceeds your limits.</p><button class="mt-3 rounded-lg bg-slate-900 text-white px-3 py-2 text-sm">Coming soon</button></article>
+        <article class="bg-white rounded-xl border border-slate-200 p-4"><h3 class="font-semibold">Credit Card Tracker</h3><p class="text-sm text-slate-600 mt-1">Track statement balances, due dates, and utilization at a glance.</p><button class="mt-3 rounded-lg border border-slate-300 px-3 py-2 text-sm">Set up</button></article>
+        <article class="bg-white rounded-xl border border-slate-200 p-4 sm:col-span-2"><h3 class="font-semibold">Monthly Bills</h3><p class="text-sm text-slate-600 mt-1">Organize recurring payments and prepare for upcoming bill cycles.</p><button class="mt-3 rounded-lg bg-slate-900 text-white px-3 py-2 text-sm">Coming soon</button></article>
       </div>
-      <div class="mt-4">
-        <h3 class="font-medium mb-2">Spending by Category</h3>
-        <ul id="category-summary" class="space-y-2 text-sm"></ul>
-      </div>
-    </section>
-
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6">
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
-        <h2 class="text-xl font-semibold">Saved Transactions</h2>
-        <div>
-          <label for="sort-order" class="block text-xs font-medium text-slate-600 mb-1">Sort Order</label>
-          <select id="sort-order" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-            <option value="newest" selected>Newest first</option>
-            <option value="oldest">Oldest first</option>
-          </select>
-        </div>
-      </div>
-      <ul id="transaction-list" class="space-y-3"></ul>
-      <p id="empty-state" class="text-slate-500">No transactions yet.</p>
     </section>
   </main>
 
