@@ -12,7 +12,7 @@ const categoryKeywords = {
   Rent: ["rent", "apartment", "lease", "landlord"],
 };
 
-let state = { inlineEditingId: null, transactionMap: new Map() };
+let state = { inlineEditingId: null, confirmDeleteId: null, transactionMap: new Map() };
 let els = {};
 
 const $ = (id) => document.getElementById(id);
@@ -131,11 +131,26 @@ function renderInlineEditCard(li, transaction) {
           <input name="purchaseTime" type="time" required value="${dt.time}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
         </div>
       </div>
-      <div class="flex gap-2">
+      <div class="flex flex-wrap gap-2">
         <button type="submit" class="rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">Save Changes</button>
         <button type="button" data-action="cancel-inline-edit" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">Cancel</button>
+        <button type="button" data-action="request-delete" data-id="${transaction.id}" class="rounded-lg bg-rose-600 px-3 py-2 text-white text-sm">Delete</button>
       </div>
     </form>
+  `;
+}
+
+
+function renderInlineDeleteConfirm(li, transaction) {
+  li.innerHTML = `
+    <div class="w-full rounded-lg border border-rose-200 bg-rose-50 p-4">
+      <p class="text-sm text-rose-800 font-medium">Are you sure you want to delete this transaction?</p>
+      <p class="text-xs text-rose-700 mt-1">${transaction.description} • ${formatCurrency(transaction.amount)}</p>
+      <div class="mt-3 flex gap-2">
+        <button type="button" data-action="confirm-delete" data-id="${transaction.id}" class="rounded-lg bg-rose-600 px-3 py-2 text-white text-sm">Confirm Delete</button>
+        <button type="button" data-action="cancel-delete" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">Cancel</button>
+      </div>
+    </div>
   `;
 }
 
@@ -147,7 +162,11 @@ function renderTransactions(txns) {
     li.className = "rounded-lg border border-slate-200 p-3 sm:p-4 bg-slate-50";
 
     if (state.inlineEditingId === t.id) {
-      renderInlineEditCard(li, t);
+      if (state.confirmDeleteId === t.id) {
+        renderInlineDeleteConfirm(li, t);
+      } else {
+        renderInlineEditCard(li, t);
+      }
       els.transactionList.appendChild(li);
       return;
     }
@@ -165,14 +184,7 @@ function renderTransactions(txns) {
     edit.dataset.action = "edit";
     edit.dataset.id = t.id;
 
-    const del = document.createElement("button");
-    del.type = "button";
-    del.textContent = "Delete";
-    del.className = "rounded-lg bg-rose-600 px-3 py-2 text-white text-sm";
-    del.dataset.action = "delete";
-    del.dataset.id = t.id;
-
-    actions.append(edit, del);
+    actions.append(edit);
     row.append(left, actions);
     li.appendChild(row);
     els.transactionList.appendChild(li);
@@ -209,19 +221,34 @@ function bind() {
 
     if (action === "edit" && id) {
       state.inlineEditingId = id;
+      state.confirmDeleteId = null;
       render();
       return;
     }
 
     if (action === "cancel-inline-edit") {
       state.inlineEditingId = null;
+      state.confirmDeleteId = null;
       render();
       return;
     }
 
-    if (action === "delete" && id) {
+    if (action === "request-delete" && id) {
+      state.confirmDeleteId = id;
+      render();
+      return;
+    }
+
+    if (action === "cancel-delete") {
+      state.confirmDeleteId = null;
+      render();
+      return;
+    }
+
+    if (action === "confirm-delete" && id) {
       saveTransactions(getTransactions().map(normalizeTransaction).filter((x) => x.id !== id));
-      if (state.inlineEditingId === id) state.inlineEditingId = null;
+      state.inlineEditingId = null;
+      state.confirmDeleteId = null;
       render();
     }
   });
@@ -255,6 +282,7 @@ function bind() {
     const txns = getTransactions().map(normalizeTransaction).map((t) => (t.id === id ? updated : t));
     saveTransactions(txns);
     state.inlineEditingId = null;
+    state.confirmDeleteId = null;
     render();
   });
 
