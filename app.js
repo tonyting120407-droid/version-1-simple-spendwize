@@ -1,3 +1,7 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import { collection, doc as firestoreDoc, getDoc, getDocs, getFirestore, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
 const STORAGE_KEY = "spendwise_transactions";
 const CATEGORIES = ["Food", "Groceries", "Transportation", "Entertainment", "Electronics", "Bills", "Rent", "Other"];
 const PERIOD_FILTERS = ["daily", "weekly", "monthly", "yearly", "all"];
@@ -27,7 +31,18 @@ const categoryKeywords = {
 };
 
 let state = { inlineEditingId: null, confirmDeleteId: null, incomeEditingId: null, incomeConfirmDeleteId: null, creditCardEditingId: null, creditCardConfirmDeleteId: null, deductionEditing: {}, deductionConfirmDelete: {}, transactionMap: new Map(), isAdvancedMode: false };
-const DEDUCTION_STORAGE_KEYS = Object.fromEntries(DEDUCTION_SECTIONS.map((section) => [section.storageKey, section.storageKey]));
+let appState = { auth: null, db: null, currentUser: null, authReady: false, dataLoaded: false, userData: {}, firebaseConfigured: false };
+const COLLECTION_STORAGE = {
+  transactions: STORAGE_KEY,
+  incomeSources: INCOME_SOURCES_STORAGE_KEY,
+  fixedBills: "spendwise_fixed_bills",
+  subscriptions: "spendwise_subscriptions",
+  savingsGoals: "spendwise_savings_goals",
+  emergencyFundGoals: "spendwise_emergency_fund_goals",
+  otherDeductions: "spendwise_other_deductions",
+  creditCards: CREDIT_CARDS_STORAGE_KEY,
+};
+const DEDUCTION_COLLECTION_BY_STORAGE = Object.fromEntries(Object.entries(COLLECTION_STORAGE).map(([collectionName, storageKey]) => [storageKey, collectionName]));
 let els = {};
 let trendChartRoot = null;
 const $ = (id) => document.getElementById(id);
@@ -36,21 +51,44 @@ const toMoneyNumber = (v) => { const n = Number(v); return Number.isFinite(n) ? 
 const formatCurrency = (v) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
 const escapeHtml = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]));
 const generateTransactionId = () => (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const firebaseEnv = typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+const FIREBASE_CONFIG = window.SPENDWISE_FIREBASE_CONFIG || {
+  apiKey: firebaseEnv.VITE_FIREBASE_API_KEY,
+  authDomain: firebaseEnv.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: firebaseEnv.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: firebaseEnv.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: firebaseEnv.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: firebaseEnv.VITE_FIREBASE_APP_ID,
+};
+const hasFirebaseConfig = () => Boolean(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.authDomain && FIREBASE_CONFIG.projectId && FIREBASE_CONFIG.appId);
 function readLocalArray(key){try{const r=localStorage.getItem(key);const p=r?JSON.parse(r):[];return Array.isArray(p)?p:[];}catch{return[];}}
 function writeLocalArray(key,items){localStorage.setItem(key,JSON.stringify(items));}
 function readLocalObject(key, fallback={}){try{const r=localStorage.getItem(key);const p=r?JSON.parse(r):fallback;return p&&typeof p==="object"&&!Array.isArray(p)?p:fallback;}catch{return fallback;}}
 function writeLocalObject(key,value){localStorage.setItem(key,JSON.stringify(value));}
-function getTransactions() { return readLocalArray(STORAGE_KEY); }
-function saveTransactions(txns) { writeLocalArray(STORAGE_KEY, txns.map(normalizeTransaction)); }
+function collectionRef(name){return collection(appState.db,"users",appState.currentUser.uid,name);}
+function userDocRef(collectionName, docId){return firestoreDoc(appState.db,"users",appState.currentUser.uid,collectionName,docId);}
+function getCachedCollection(name){return appState.currentUser&&appState.dataLoaded?appState.userData[name]||[]:readLocalArray(COLLECTION_STORAGE[name]);}
+function setCachedCollection(name,items){if(appState.currentUser)appState.userData[name]=items;writeLocalArray(COLLECTION_STORAGE[name],items);if(appState.currentUser&&appState.db)persistCollection(name,items).catch((error)=>{console.error(error);setAuthError("We could not save your latest changes to Firestore. They are still saved locally as a fallback.");});}
+async function persistCollection(name,items){const ref=collectionRef(name);const snap=await getDocs(ref);const ids=new Set(items.map((item)=>item.id));const batch=writeBatch(appState.db);snap.docs.forEach((document)=>{if(!ids.has(document.id))batch.delete(document.ref);});items.forEach((item)=>batch.set(userDocRef(name,item.id),item));await batch.commit();}
+function setAuthError(message){if(!els.authError)return;els.authError.textContent=message||"";els.authError.classList.toggle("hidden",!message);}
+function showView(view){els.loadingScreen?.classList.toggle("hidden",view!=="loading");els.authScreen?.classList.toggle("hidden",view!=="auth");els.authScreen?.classList.toggle("flex",view==="auth");els.appShell?.classList.toggle("hidden",view!=="app");}
+async function loadCollectionData(name){const snap=await getDocs(collectionRef(name));return snap.docs.map((document)=>({id:document.id,...document.data()}));}
+async function loadDashboardSettings(){const snap=await getDoc(userDocRef("dashboardSettings","preferences"));return snap.exists()?snap.data():readLocalObject(DASHBOARD_STORAGE_KEY,{taxAmount:0,taxType:"monthly"});}
+async function loadUserData(){showView("loading");appState.dataLoaded=false;const names=Object.keys(COLLECTION_STORAGE);const entries=await Promise.all(names.map(async(name)=>[name,await loadCollectionData(name)]));appState.userData=Object.fromEntries(entries);appState.userData.dashboardSettings=await loadDashboardSettings();appState.dataLoaded=true;setDashboardFormValues(getDashboardInputs());render();showView("app");}
+function clearUserData(){appState.userData={};appState.dataLoaded=false;state.inlineEditingId=null;state.confirmDeleteId=null;state.incomeEditingId=null;state.incomeConfirmDeleteId=null;state.creditCardEditingId=null;state.creditCardConfirmDeleteId=null;state.deductionEditing={};state.deductionConfirmDelete={};state.transactionMap=new Map();}
+function getSignedInLabel(user){return user.displayName||user.email||"Signed in";}
+function initFirebaseAuth(){if(!hasFirebaseConfig()){showView("auth");setAuthError("Firebase is not configured yet. Add your Firebase web app config values before signing in.");return;}const firebaseApp=initializeApp(FIREBASE_CONFIG);appState.auth=getAuth(firebaseApp);appState.db=getFirestore(firebaseApp);appState.firebaseConfigured=true;onAuthStateChanged(appState.auth,async(user)=>{appState.authReady=true;appState.currentUser=user;setAuthError("");if(!user){clearUserData();showView("auth");return;}if(els.userLabel)els.userLabel.textContent=`Signed in as ${getSignedInLabel(user)}`;try{await loadUserData();}catch(error){console.error(error);showView("auth");setAuthError("We could not load your SpendWise data. Please check your Firestore setup and try again.");}});}
+function getTransactions() { return getCachedCollection("transactions"); }
+function saveTransactions(txns) { setCachedCollection("transactions", txns.map(normalizeTransaction)); }
 function categorize(description) { const text = description.toLowerCase(); for (const [c, ks] of Object.entries(categoryKeywords)) if (ks.some((k) => text.includes(k))) return c; return "Other"; }
 function parsePurchaseDateTime(d, t) { const x = new Date(`${d}T${t || "00:00"}:00`); return Number.isNaN(x.getTime()) ? new Date().toISOString() : x.toISOString(); }
 function splitDateTime(iso) { const d = new Date(iso); if (Number.isNaN(d.getTime())) return { date: "", time: "" }; return { date: d.toISOString().slice(0, 10), time: d.toTimeString().slice(0, 5) }; }
 function normalizeTransaction(t) { const fb = typeof t.createdAt === "string" ? t.createdAt : new Date().toISOString(); const pr = typeof t.purchaseAt === "string" ? t.purchaseAt : fb; const d = new Date(pr); return { id: t.id ?? generateTransactionId(), amount: Number.isFinite(Number(t.amount)) ? Number(t.amount) : 0, description: typeof t.description === "string" ? t.description : "", category: CATEGORIES.includes(t.category) ? t.category : "Other", paymentMethod: PAYMENT_METHODS.includes(t.paymentMethod) ? t.paymentMethod : "Cash", creditCardId: typeof t.creditCardId === "string" ? t.creditCardId : "", purchaseAt: Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString(), createdAt: fb }; }
 
-function getIncomeSources() { return readLocalArray(INCOME_SOURCES_STORAGE_KEY); }
-function saveIncomeSources(sources) { writeLocalArray(INCOME_SOURCES_STORAGE_KEY, sources); }
-function getStoredItems(key) { return readLocalArray(DEDUCTION_STORAGE_KEYS[key] || key); }
-function saveStoredItems(key, items) { writeLocalArray(DEDUCTION_STORAGE_KEYS[key] || key, items); }
+function getIncomeSources() { return getCachedCollection("incomeSources"); }
+function saveIncomeSources(sources) { setCachedCollection("incomeSources", sources); }
+function getStoredItems(key) { return getCachedCollection(DEDUCTION_COLLECTION_BY_STORAGE[key] || key); }
+function saveStoredItems(key, items) { setCachedCollection(DEDUCTION_COLLECTION_BY_STORAGE[key] || key, items); }
 function monthlyItemEquivalent(item, now = new Date()) { return monthlyIncomeEquivalent(item, now); }
 function renderItemizedSection(sectionEl) {
   const sectionId = sectionEl.dataset.deductionSection;
@@ -98,8 +136,8 @@ function renderIncomeSources() {
   });
 }
 
-function getDashboardInputs(){ const p=readLocalObject(DASHBOARD_STORAGE_KEY,{}); return { taxAmount:toMoneyNumber(p.taxAmount), taxType:["monthly","yearly","percentage"].includes(p.taxType)?p.taxType:"monthly", detailsCollapsed: typeof p.detailsCollapsed === "boolean" ? p.detailsCollapsed : undefined };}
-function saveDashboardInputs(v){const next={...readLocalObject(DASHBOARD_STORAGE_KEY,{}),...v};writeLocalObject(DASHBOARD_STORAGE_KEY,next);}
+function getDashboardInputs(){ const p=appState.currentUser&&appState.dataLoaded?appState.userData.dashboardSettings||{}:readLocalObject(DASHBOARD_STORAGE_KEY,{}); return { taxAmount:toMoneyNumber(p.taxAmount), taxType:["monthly","yearly","percentage"].includes(p.taxType)?p.taxType:"monthly", detailsCollapsed: typeof p.detailsCollapsed === "boolean" ? p.detailsCollapsed : undefined };}
+function saveDashboardInputs(v){const next={...(appState.userData.dashboardSettings||{}),...v};appState.userData.dashboardSettings=next;writeLocalObject(DASHBOARD_STORAGE_KEY,next);if(appState.currentUser&&appState.db)setDoc(userDocRef("dashboardSettings","preferences"),next,{merge:true}).catch((error)=>{console.error(error);setAuthError("We could not save dashboard settings to Firestore. They are still saved locally as a fallback.");});}
 function setDashboardFormValues(v){ if(!els.fdForm) return; els.fdTaxAmount.value=v.taxAmount||""; els.fdTaxType.value=v.taxType; }
 const getDashboardFormValues=()=>({ taxAmount:toMoneyNumber(els.fdTaxAmount?.value), taxType:els.fdTaxType?.value||"monthly" });
 const getDashboardDetailsCollapsed=()=>{const settings=getDashboardInputs();return typeof settings.detailsCollapsed==="boolean"?settings.detailsCollapsed:localStorage.getItem(DASHBOARD_DETAILS_COLLAPSED_KEY)!=="false";};
@@ -119,8 +157,8 @@ function normalizeCreditCard(card) {
     dueDay: Math.min(31, Math.max(1, Math.round(dueDayValue)))
   };
 }
-function getCreditCards(){const cards=readLocalArray(CREDIT_CARDS_STORAGE_KEY);if(cards.length)return cards.map(normalizeCreditCard);const legacy=readLocalObject(LEGACY_CREDIT_CARD_STORAGE_KEY,null);if(!legacy||(!legacy.cardName&&!legacy.limit&&!legacy.balance))return[];return[normalizeCreditCard({cardName:legacy.cardName||"Credit Card",limit:legacy.limit,balance:legacy.balance,dueDay:legacy.dueDay||1})];}
-function saveCreditCards(cards){writeLocalArray(CREDIT_CARDS_STORAGE_KEY,cards.map(normalizeCreditCard));}
+function getCreditCards(){const cards=getCachedCollection("creditCards");if(cards.length)return cards.map(normalizeCreditCard);const legacy=readLocalObject(LEGACY_CREDIT_CARD_STORAGE_KEY,null);if(!legacy||(!legacy.cardName&&!legacy.limit&&!legacy.balance))return[];return[normalizeCreditCard({cardName:legacy.cardName||"Credit Card",limit:legacy.limit,balance:legacy.balance,dueDay:legacy.dueDay||1})];}
+function saveCreditCards(cards){setCachedCollection("creditCards",cards.map(normalizeCreditCard));}
 function getCreditCardName(id){const card=getCreditCards().find((c)=>c.id===id);return card?card.cardName:"Uncategorized credit spending";}
 function getCurrentMonthCreditTransactions(txns){const now=new Date();return txns.filter((t)=>{const d=new Date(t.purchaseAt);return t.paymentMethod==="Credit Card"&&t.amount>0&&d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth();});}
 function getCreditCardMetrics(txns){const cards=getCreditCards();const creditTransactions=getCurrentMonthCreditTransactions(txns);const cardMetrics=cards.map((card)=>{const cardTxns=creditTransactions.filter((t)=>t.creditCardId===card.id);const creditSpentMonth=cardTxns.reduce((sum,t)=>sum+Number(t.amount),0);const totalUsed=card.balance+creditSpentMonth;const creditLeft=card.limit-totalUsed;const utilization=card.limit>0?(totalUsed/card.limit)*100:0;return{...card,creditTransactions:cardTxns,creditSpentMonth,totalUsed,creditLeft,utilization};});const uncategorizedSpent=creditTransactions.filter((t)=>!t.creditCardId||!cards.some((c)=>c.id===t.creditCardId)).reduce((sum,t)=>sum+Number(t.amount),0);const totalLimit=cardMetrics.reduce((s,c)=>s+c.limit,0);const totalUsed=cardMetrics.reduce((s,c)=>s+c.totalUsed,0)+uncategorizedSpent;const totalCreditLeft=totalLimit-totalUsed;const totalCreditSpentMonth=cardMetrics.reduce((s,c)=>s+c.creditSpentMonth,0)+uncategorizedSpent;const averageUtilization=cardMetrics.length?cardMetrics.reduce((s,c)=>s+c.utilization,0)/cardMetrics.length:0;return{cards:cardMetrics,creditTransactions,uncategorizedSpent,totalLimit,totalUsed,totalCreditLeft,totalCreditSpentMonth,averageUtilization};}
@@ -143,6 +181,8 @@ function render(){const txns=sortedTxns(getTransactions().map(normalizeTransacti
 function setDefaultDateTime(){const now=new Date();els.purchaseDate.value=now.toISOString().slice(0,10);els.purchaseTime.value=now.toTimeString().slice(0,5);} 
 
 function bind(){
+  els.googleSignIn?.addEventListener("click",async()=>{setAuthError("");if(!appState.auth){setAuthError("Firebase is not configured yet. Add your Firebase web app config values before signing in.");return;}const provider=new GoogleAuthProvider();try{await signInWithPopup(appState.auth,provider);}catch(error){console.error(error);setAuthError("Google sign-in failed. Please try again.");}});
+  els.signOut?.addEventListener("click",async()=>{if(appState.auth)await signOut(appState.auth);});
   els.description.addEventListener("input",()=>{const c=categorize(els.description.value.trim());els.categoryPreview.textContent=`Category preview: ${c}`;els.category.value=c;});
   els.sortOrderSelect.addEventListener("change",render);els.periodSelect.addEventListener("change",render);els.trendRangeSelect.addEventListener("change",render);
   if(els.fdForm) els.fdForm.addEventListener("input",()=>{saveDashboardInputs(getDashboardFormValues());render();});
@@ -190,5 +230,5 @@ function bind(){
   els.form.addEventListener("submit",(e)=>{e.preventDefault();const amount=Number(els.amount.value);const description=els.description.value.trim();if(!Number.isFinite(amount)||amount<=0||!description)return;const txns=getTransactions().map(normalizeTransaction);txns.push({id:generateTransactionId(),amount,description,category:CATEGORIES.includes(els.category.value)?els.category.value:categorize(description),paymentMethod:els.spentOnCreditCard.checked?"Credit Card":"Cash",creditCardId:els.spentOnCreditCard.checked?els.creditCardUsed.value:"",purchaseAt:parsePurchaseDateTime(els.purchaseDate.value,els.purchaseTime.value),createdAt:new Date().toISOString()});saveTransactions(txns);els.form.reset();els.spentOnCreditCard.checked=false;if(els.creditCardUsed)els.creditCardUsed.value="";setTransactionCreditCardVisibility();setDefaultDateTime();els.categoryPreview.textContent="Category preview: Other";els.amount.focus();render();});
 }
 
-function init(){els={simpleMode:$("simple-mode"),advancedMode:$("advanced-mode"),financialDashboard:$("financial-dashboard"),openAdvanced:$("open-advanced"),backSimple:$("back-simple"),form:$("transaction-form"),amount:$("amount"),description:$("description"),category:$("category"),spentOnCreditCard:$("spent-on-credit-card"),creditCardUsedWrap:$("credit-card-used-wrap"),creditCardUsed:$("credit-card-used"),noCreditCardsMessage:$("no-credit-cards-message"),purchaseDate:$("purchase-date"),purchaseTime:$("purchase-time"),categoryPreview:$("category-preview"),transactionList:$("transaction-list"),emptyState:$("empty-state"),totalSpent:$("total-spent"),transactionCount:$("transaction-count"),categorySummary:$("category-summary"),sortOrderSelect:$("sort-order"),periodSelect:$("summary-period"),trendRangeSelect:$("trend-range"),fdForm:$("fd-form"),fdDetailsContent:$("fd-details-content"),fdDetailsToggle:$("fd-details-toggle"),fdAddIncome:$("fd-add-income"),fdIncomeFormWrap:$("fd-income-form-wrap"),fdIncomeForm:$("fd-income-form"),fdIncomeName:$("fd-income-name"),fdIncomeAmount:$("fd-income-amount"),fdIncomeFrequency:$("fd-income-frequency"),fdIncomeDate:$("fd-income-date"),fdIncomeDateWrap:$("fd-income-date-wrap"),fdIncomeCancel:$("fd-income-cancel"),fdIncomeList:$("fd-income-list"),fdTaxAmount:$("fd-tax-amount"),fdTaxType:$("fd-tax-type"),fdDeductionSections:document.querySelectorAll("[data-deduction-section]"),fdMonthlyIncome:$("fd-monthly-income"),fdMonthlyExpendable:$("fd-monthly-expendable"),fdSpentMonth:$("fd-spent-month"),fdRemaining:$("fd-remaining"),fdSafeToday:$("fd-safe-today"),fdMonthWarning:$("fd-month-warning"),fdDailyBudget:$("fd-daily-budget"),fdSpentToday:$("fd-spent-today"),fdLeftToday:$("fd-left-today"),fdSavedToday:$("fd-saved-today"),fdDayWarning:$("fd-day-warning"),fdCreditUsed:$("fd-credit-used"),fdCreditLeft:$("fd-credit-left"),fdCreditUtilization:$("fd-credit-utilization"),ccAddCard:$("cc-add-card"),ccForm:$("cc-form"),ccCancelAdd:$("cc-cancel-add"),ccCardName:$("cc-card-name"),ccLimit:$("cc-limit"),ccBalance:$("cc-balance"),ccDueDay:$("cc-due-day"),ccTotalLimit:$("cc-total-limit"),ccSpentMonth:$("cc-spent-month"),ccTotalUsed:$("cc-total-used"),ccTotalLeft:$("cc-total-left"),ccAverageUtilization:$("cc-average-utilization"),ccWarnings:$("cc-warnings"),ccCardList:$("cc-card-list"),ccTransactionList:$("cc-transaction-list")}; const required=[els.simpleMode,els.advancedMode,els.openAdvanced,els.backSimple,els.form,els.amount,els.description,els.category,els.spentOnCreditCard,els.creditCardUsedWrap,els.creditCardUsed,els.purchaseDate,els.purchaseTime,els.categoryPreview,els.transactionList,els.emptyState,els.totalSpent,els.transactionCount,els.categorySummary,els.sortOrderSelect,els.periodSelect,els.trendRangeSelect]; bindNavigation(); if(required.some((v)=>!v)) return; setDefaultDateTime(); setDashboardFormValues(getDashboardInputs()); bind(); render();}
+function init(){els={loadingScreen:$("loading-screen"),authScreen:$("auth-screen"),appShell:$("app-shell"),googleSignIn:$("google-sign-in"),authError:$("auth-error"),userLabel:$("user-label"),signOut:$("sign-out"),simpleMode:$("simple-mode"),advancedMode:$("advanced-mode"),financialDashboard:$("financial-dashboard"),openAdvanced:$("open-advanced"),backSimple:$("back-simple"),form:$("transaction-form"),amount:$("amount"),description:$("description"),category:$("category"),spentOnCreditCard:$("spent-on-credit-card"),creditCardUsedWrap:$("credit-card-used-wrap"),creditCardUsed:$("credit-card-used"),noCreditCardsMessage:$("no-credit-cards-message"),purchaseDate:$("purchase-date"),purchaseTime:$("purchase-time"),categoryPreview:$("category-preview"),transactionList:$("transaction-list"),emptyState:$("empty-state"),totalSpent:$("total-spent"),transactionCount:$("transaction-count"),categorySummary:$("category-summary"),sortOrderSelect:$("sort-order"),periodSelect:$("summary-period"),trendRangeSelect:$("trend-range"),fdForm:$("fd-form"),fdDetailsContent:$("fd-details-content"),fdDetailsToggle:$("fd-details-toggle"),fdAddIncome:$("fd-add-income"),fdIncomeFormWrap:$("fd-income-form-wrap"),fdIncomeForm:$("fd-income-form"),fdIncomeName:$("fd-income-name"),fdIncomeAmount:$("fd-income-amount"),fdIncomeFrequency:$("fd-income-frequency"),fdIncomeDate:$("fd-income-date"),fdIncomeDateWrap:$("fd-income-date-wrap"),fdIncomeCancel:$("fd-income-cancel"),fdIncomeList:$("fd-income-list"),fdTaxAmount:$("fd-tax-amount"),fdTaxType:$("fd-tax-type"),fdDeductionSections:document.querySelectorAll("[data-deduction-section]"),fdMonthlyIncome:$("fd-monthly-income"),fdMonthlyExpendable:$("fd-monthly-expendable"),fdSpentMonth:$("fd-spent-month"),fdRemaining:$("fd-remaining"),fdSafeToday:$("fd-safe-today"),fdMonthWarning:$("fd-month-warning"),fdDailyBudget:$("fd-daily-budget"),fdSpentToday:$("fd-spent-today"),fdLeftToday:$("fd-left-today"),fdSavedToday:$("fd-saved-today"),fdDayWarning:$("fd-day-warning"),fdCreditUsed:$("fd-credit-used"),fdCreditLeft:$("fd-credit-left"),fdCreditUtilization:$("fd-credit-utilization"),ccAddCard:$("cc-add-card"),ccForm:$("cc-form"),ccCancelAdd:$("cc-cancel-add"),ccCardName:$("cc-card-name"),ccLimit:$("cc-limit"),ccBalance:$("cc-balance"),ccDueDay:$("cc-due-day"),ccTotalLimit:$("cc-total-limit"),ccSpentMonth:$("cc-spent-month"),ccTotalUsed:$("cc-total-used"),ccTotalLeft:$("cc-total-left"),ccAverageUtilization:$("cc-average-utilization"),ccWarnings:$("cc-warnings"),ccCardList:$("cc-card-list"),ccTransactionList:$("cc-transaction-list")}; const required=[els.simpleMode,els.advancedMode,els.openAdvanced,els.backSimple,els.form,els.amount,els.description,els.category,els.spentOnCreditCard,els.creditCardUsedWrap,els.creditCardUsed,els.purchaseDate,els.purchaseTime,els.categoryPreview,els.transactionList,els.emptyState,els.totalSpent,els.transactionCount,els.categorySummary,els.sortOrderSelect,els.periodSelect,els.trendRangeSelect]; bindNavigation(); if(required.some((v)=>!v)) return; showView("loading"); setDefaultDateTime(); bind(); initFirebaseAuth();}
 init();
