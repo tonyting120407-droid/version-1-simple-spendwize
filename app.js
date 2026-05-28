@@ -3,6 +3,7 @@ const CATEGORIES = ["Food", "Groceries", "Transportation", "Entertainment", "Ele
 const PERIOD_FILTERS = ["daily", "weekly", "monthly", "yearly", "all"];
 const TREND_RANGES = ["week", "month", "year"];
 const DASHBOARD_STORAGE_KEY = "spendwise_dashboard_inputs";
+const INCOME_SOURCES_STORAGE_KEY = "spendwise_income_sources";
 
 const categoryKeywords = {
   Food: ["coffee", "lunch", "dinner", "burger", "restaurant", "pizza", "meal"],
@@ -37,6 +38,45 @@ function normalizeTransaction(t) {
   return { id: t.id ?? generateTransactionId(), amount: Number.isFinite(Number(t.amount)) ? Number(t.amount) : 0, description: typeof t.description === "string" ? t.description : "", category: CATEGORIES.includes(t.category) ? t.category : "Other", purchaseAt: Number.isNaN(purchase.getTime()) ? new Date().toISOString() : purchase.toISOString(), createdAt: fallback };
 }
 
+
+function getIncomeSources() {
+  try {
+    const raw = localStorage.getItem(INCOME_SOURCES_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+function saveIncomeSources(sources) { localStorage.setItem(INCOME_SOURCES_STORAGE_KEY, JSON.stringify(sources)); }
+function monthlyIncomeEquivalent(src, now = new Date()) {
+  const amount = toMoneyNumber(src.amount);
+  if (src.frequency === "yearly") return amount / 12;
+  if (src.frequency === "weekly") return (amount * 52) / 12;
+  if (src.frequency === "onetime") {
+    const d = new Date(src.dateReceived || "");
+    return (!Number.isNaN(d.getTime()) && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) ? amount : 0;
+  }
+  return amount;
+}
+function renderIncomeSources() {
+  if (!els.fdIncomeList) return;
+  const now = new Date();
+  const sources = getIncomeSources();
+  els.fdIncomeList.innerHTML = "";
+  if (!sources.length) {
+    const li = document.createElement("li");
+    li.className = "text-slate-500 text-sm";
+    li.textContent = "No income sources added yet.";
+    els.fdIncomeList.appendChild(li);
+    return;
+  }
+  sources.forEach((src) => {
+    const li = document.createElement("li");
+    li.className = "rounded-lg border border-slate-200 p-3 bg-slate-50";
+    const monthlyEq = monthlyIncomeEquivalent(src, now);
+    li.innerHTML = `<div class="flex items-start justify-between gap-2"><div><p class="font-medium">${src.name || "Income"}</p><p class="text-sm text-slate-600">${formatCurrency(toMoneyNumber(src.amount))} • ${src.frequency}</p>${src.frequency === "onetime" && src.dateReceived ? `<p class="text-xs text-slate-500">Date: ${src.dateReceived}</p>` : ""}<p class="text-sm text-slate-700">Monthly equivalent: ${formatCurrency(monthlyEq)}</p></div><div class="flex gap-2"><button type="button" data-income-action="edit" data-income-id="${src.id}" class="rounded border border-slate-300 px-2 py-1 text-xs">Edit</button><button type="button" data-income-action="delete" data-income-id="${src.id}" class="rounded bg-rose-600 text-white px-2 py-1 text-xs">Delete</button></div></div>`;
+    els.fdIncomeList.appendChild(li);
+  });
+}
 function getDashboardInputs() {
   try {
     const raw = localStorage.getItem(DASHBOARD_STORAGE_KEY);
@@ -48,10 +88,10 @@ function saveDashboardInputs(v) { localStorage.setItem(DASHBOARD_STORAGE_KEY, JS
 
 function setDashboardFormValues(v) {
   if (!els.fdForm) return;
-  els.fdSalary.value = v.salary || ""; els.fdOtherIncome.value = v.otherIncome || ""; els.fdTaxAmount.value = v.taxAmount || ""; els.fdTaxType.value = v.taxType;
+  els.fdTaxAmount.value = v.taxAmount || ""; els.fdTaxType.value = v.taxType;
   els.fdFixedBills.value = v.fixedBills || ""; els.fdSubscriptions.value = v.subscriptions || ""; els.fdSavingsGoal.value = v.savingsGoal || ""; els.fdEmergencyGoal.value = v.emergencyGoal || ""; els.fdOtherDeductions.value = v.otherDeductions || "";
 }
-function getDashboardFormValues() { return { salary: toMoneyNumber(els.fdSalary?.value), otherIncome: toMoneyNumber(els.fdOtherIncome?.value), taxAmount: toMoneyNumber(els.fdTaxAmount?.value), taxType: els.fdTaxType?.value || "monthly", fixedBills: toMoneyNumber(els.fdFixedBills?.value), subscriptions: toMoneyNumber(els.fdSubscriptions?.value), savingsGoal: toMoneyNumber(els.fdSavingsGoal?.value), emergencyGoal: toMoneyNumber(els.fdEmergencyGoal?.value), otherDeductions: toMoneyNumber(els.fdOtherDeductions?.value) }; }
+function getDashboardFormValues() { return { salary: 0, otherIncome: 0, taxAmount: toMoneyNumber(els.fdTaxAmount?.value), taxType: els.fdTaxType?.value || "monthly", fixedBills: toMoneyNumber(els.fdFixedBills?.value), subscriptions: toMoneyNumber(els.fdSubscriptions?.value), savingsGoal: toMoneyNumber(els.fdSavingsGoal?.value), emergencyGoal: toMoneyNumber(els.fdEmergencyGoal?.value), otherDeductions: toMoneyNumber(els.fdOtherDeductions?.value) }; }
 
 function filterByPeriod(txns) {
   const period = PERIOD_FILTERS.includes(els.periodSelect.value) ? els.periodSelect.value : "all";
@@ -65,7 +105,7 @@ function renderSummary(txns) { const filtered = filterByPeriod(txns); els.totalS
 function renderFinancialDashboard(txns) {
   if (!els.fdMonthlyIncome) return;
   const i = getDashboardFormValues();
-  const income = i.salary + i.otherIncome;
+  const income = getIncomeSources().reduce((sum, src) => sum + monthlyIncomeEquivalent(src), 0);
   const taxes = i.taxType === "yearly" ? i.taxAmount / 12 : i.taxType === "percentage" ? income * (i.taxAmount / 100) : i.taxAmount;
   const deductions = taxes + i.fixedBills + i.subscriptions + i.savingsGoal + i.emergencyGoal + i.otherDeductions;
   const expendable = income - deductions;
@@ -117,6 +157,61 @@ function bind(){
   els.sortOrderSelect.addEventListener("change",render); els.periodSelect.addEventListener("change",render); els.trendRangeSelect.addEventListener("change",render);
   if (els.fdForm) { els.fdForm.addEventListener("input",()=>{ const v=getDashboardFormValues(); saveDashboardInputs(v); render(); }); }
 
+
+  if (els.fdAddIncome) {
+    const resetIncomeForm = () => {
+      els.fdIncomeForm.reset();
+      els.fdIncomeForm.dataset.editId = "";
+      els.fdIncomeDateWrap.classList.add("hidden");
+      els.fdIncomeFormWrap.classList.add("hidden");
+    };
+    els.fdAddIncome.addEventListener("click", () => { els.fdIncomeFormWrap.classList.remove("hidden"); });
+    els.fdIncomeFrequency.addEventListener("change", () => {
+      els.fdIncomeDateWrap.classList.toggle("hidden", els.fdIncomeFrequency.value !== "onetime");
+    });
+    els.fdIncomeCancel.addEventListener("click", resetIncomeForm);
+    els.fdIncomeForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const sources = getIncomeSources();
+      const next = {
+        id: els.fdIncomeForm.dataset.editId || generateTransactionId(),
+        name: (els.fdIncomeName.value || "").trim(),
+        amount: toMoneyNumber(els.fdIncomeAmount.value),
+        frequency: els.fdIncomeFrequency.value,
+        dateReceived: els.fdIncomeFrequency.value === "onetime" ? els.fdIncomeDate.value : "",
+      };
+      if (!next.name || next.amount <= 0) return;
+      const updated = els.fdIncomeForm.dataset.editId ? sources.map((s) => s.id === next.id ? next : s) : [...sources, next];
+      saveIncomeSources(updated);
+      resetIncomeForm();
+      render();
+    });
+
+    els.fdIncomeList.addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-income-action]");
+      if (!btn) return;
+      const id = btn.dataset.incomeId;
+      const action = btn.dataset.incomeAction;
+      const sources = getIncomeSources();
+      const src = sources.find((x) => x.id === id);
+      if (!src) return;
+      if (action === "edit") {
+        els.fdIncomeFormWrap.classList.remove("hidden");
+        els.fdIncomeForm.dataset.editId = src.id;
+        els.fdIncomeName.value = src.name || "";
+        els.fdIncomeAmount.value = src.amount || "";
+        els.fdIncomeFrequency.value = src.frequency || "monthly";
+        els.fdIncomeDateWrap.classList.toggle("hidden", els.fdIncomeFrequency.value !== "onetime");
+        els.fdIncomeDate.value = src.dateReceived || "";
+      }
+      if (action === "delete") {
+        if (window.confirm("Are you sure you want to delete this income source?")) {
+          saveIncomeSources(sources.filter((x) => x.id !== id));
+          render();
+        }
+      }
+    });
+  }
   els.transactionList.addEventListener("click",(event)=>{ const button=event.target.closest("button[data-action]"); if(!button) return; const {action,id}=button.dataset; if(action==="edit"&&id){ state.inlineEditingId=id; state.confirmDeleteId=null; render(); return;} if(action==="cancel-inline-edit"){ state.inlineEditingId=null; state.confirmDeleteId=null; render(); return;} if(action==="request-delete"&&id){ state.confirmDeleteId=id; render(); return;} if(action==="cancel-delete"){ state.confirmDeleteId=null; render(); return;} if(action==="confirm-delete"&&id){ saveTransactions(getTransactions().map(normalizeTransaction).filter((x)=>x.id!==id)); state.inlineEditingId=null; state.confirmDeleteId=null; render(); }});
 
   els.transactionList.addEventListener("submit",(event)=>{ const f=event.target.closest("form[data-inline-form]"); if(!f) return; event.preventDefault(); const id=f.dataset.inlineForm; const existing=state.transactionMap.get(id); if(!existing) return; const fd=new FormData(f); const amount=Number(fd.get("amount")); const description=String(fd.get("description")||"").trim(); const category=String(fd.get("category")||"Other"); const purchaseDate=String(fd.get("purchaseDate")||""); const purchaseTime=String(fd.get("purchaseTime")||""); if(!Number.isFinite(amount)||amount<=0||!description) return; const updated={...existing, amount, description, category:CATEGORIES.includes(category)?category:categorize(description), purchaseAt:parsePurchaseDateTime(purchaseDate,purchaseTime)}; saveTransactions(getTransactions().map(normalizeTransaction).map((t)=>t.id===id?updated:t)); state.inlineEditingId=null; state.confirmDeleteId=null; render(); });
@@ -128,7 +223,7 @@ function bind(){
 }
 
 function init(){
-  els={ form:$("transaction-form"), amount:$("amount"), description:$("description"), category:$("category"), purchaseDate:$("purchase-date"), purchaseTime:$("purchase-time"), categoryPreview:$("category-preview"), transactionList:$("transaction-list"), emptyState:$("empty-state"), totalSpent:$("total-spent"), transactionCount:$("transaction-count"), categorySummary:$("category-summary"), sortOrderSelect:$("sort-order"), periodSelect:$("summary-period"), trendRangeSelect:$("trend-range"), fdForm:$("fd-form"), fdSalary:$("fd-salary"), fdOtherIncome:$("fd-other-income"), fdTaxAmount:$("fd-tax-amount"), fdTaxType:$("fd-tax-type"), fdFixedBills:$("fd-fixed-bills"), fdSubscriptions:$("fd-subscriptions"), fdSavingsGoal:$("fd-savings-goal"), fdEmergencyGoal:$("fd-emergency-goal"), fdOtherDeductions:$("fd-other-deductions"), fdMonthlyIncome:$("fd-monthly-income"), fdMonthlyExpendable:$("fd-monthly-expendable"), fdSpentMonth:$("fd-spent-month"), fdRemaining:$("fd-remaining"), fdSafeToday:$("fd-safe-today"), fdSafeWarning:$("fd-safe-warning") };
+  els={ form:$("transaction-form"), amount:$("amount"), description:$("description"), category:$("category"), purchaseDate:$("purchase-date"), purchaseTime:$("purchase-time"), categoryPreview:$("category-preview"), transactionList:$("transaction-list"), emptyState:$("empty-state"), totalSpent:$("total-spent"), transactionCount:$("transaction-count"), categorySummary:$("category-summary"), sortOrderSelect:$("sort-order"), periodSelect:$("summary-period"), trendRangeSelect:$("trend-range"), fdForm:$("fd-form"), fdAddIncome:$("fd-add-income"), fdIncomeFormWrap:$("fd-income-form-wrap"), fdIncomeForm:$("fd-income-form"), fdIncomeName:$("fd-income-name"), fdIncomeAmount:$("fd-income-amount"), fdIncomeFrequency:$("fd-income-frequency"), fdIncomeDate:$("fd-income-date"), fdIncomeDateWrap:$("fd-income-date-wrap"), fdIncomeCancel:$("fd-income-cancel"), fdIncomeList:$("fd-income-list"), fdTaxAmount:$("fd-tax-amount"), fdTaxType:$("fd-tax-type"), fdFixedBills:$("fd-fixed-bills"), fdSubscriptions:$("fd-subscriptions"), fdSavingsGoal:$("fd-savings-goal"), fdEmergencyGoal:$("fd-emergency-goal"), fdOtherDeductions:$("fd-other-deductions"), fdMonthlyIncome:$("fd-monthly-income"), fdMonthlyExpendable:$("fd-monthly-expendable"), fdSpentMonth:$("fd-spent-month"), fdRemaining:$("fd-remaining"), fdSafeToday:$("fd-safe-today"), fdSafeWarning:$("fd-safe-warning") };
   const required=[els.form,els.amount,els.description,els.category,els.purchaseDate,els.purchaseTime,els.categoryPreview,els.transactionList,els.emptyState,els.totalSpent,els.transactionCount,els.categorySummary,els.sortOrderSelect,els.periodSelect,els.trendRangeSelect];
   if(required.some((v)=>!v)) return;
   setDefaultDateTime(); setDashboardFormValues(getDashboardInputs()); bind(); render();

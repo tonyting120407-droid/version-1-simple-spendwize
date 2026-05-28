@@ -115,9 +115,24 @@
           <div class="rounded-lg bg-slate-50 border border-slate-200 p-4 sm:col-span-2 lg:col-span-1"><p class="text-sm text-slate-500">Safe to Spend Today</p><p id="fd-safe-today" class="text-xl font-bold">$0.00</p><p id="fd-safe-warning" class="text-xs text-rose-600 mt-1 hidden">Warning: You are over budget for the remaining days this month.</p></div>
         </div>
 
+        <section class="mt-5 rounded-lg border border-slate-200 p-4">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <h4 class="font-semibold">Income Sources</h4>
+            <button id="fd-add-income" type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">+ Add Income Source</button>
+          </div>
+          <div id="fd-income-form-wrap" class="hidden rounded-lg border border-slate-200 p-3 mb-3">
+            <form id="fd-income-form" class="grid gap-3 sm:grid-cols-2">
+              <div><label class="block text-sm text-slate-600 mb-1" for="fd-income-name">Income name</label><input id="fd-income-name" required class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div><label class="block text-sm text-slate-600 mb-1" for="fd-income-amount">Amount</label><input id="fd-income-amount" type="number" min="0" step="0.01" required class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div><label class="block text-sm text-slate-600 mb-1" for="fd-income-frequency">Frequency</label><select id="fd-income-frequency" class="w-full rounded-lg border border-slate-300 px-3 py-2"><option value="monthly">Monthly</option><option value="yearly">Yearly</option><option value="weekly">Weekly</option><option value="onetime">One-time</option></select></div>
+              <div id="fd-income-date-wrap" class="hidden"><label class="block text-sm text-slate-600 mb-1" for="fd-income-date">Date received</label><input id="fd-income-date" type="date" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
+              <div class="sm:col-span-2 flex gap-2"><button type="submit" class="rounded-lg bg-blue-600 px-3 py-2 text-white text-sm">Save Source</button><button id="fd-income-cancel" type="button" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">Cancel</button></div>
+            </form>
+          </div>
+          <ul id="fd-income-list" class="space-y-2"></ul>
+        </section>
+
         <form id="fd-form" class="grid gap-3 mt-5 sm:grid-cols-2">
-          <div><label class="block text-sm text-slate-600 mb-1" for="fd-salary">Monthly salary / wage</label><input id="fd-salary" type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
-          <div><label class="block text-sm text-slate-600 mb-1" for="fd-other-income">Other income</label><input id="fd-other-income" type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
           <div><label class="block text-sm text-slate-600 mb-1" for="fd-tax-amount">Tax amount</label><input id="fd-tax-amount" type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
           <div><label class="block text-sm text-slate-600 mb-1" for="fd-tax-type">Tax type</label><select id="fd-tax-type" class="w-full rounded-lg border border-slate-300 px-3 py-2"><option value="monthly">Monthly amount</option><option value="yearly">Yearly amount</option><option value="percentage">Percentage</option></select></div>
           <div><label class="block text-sm text-slate-600 mb-1" for="fd-fixed-bills">Fixed bills</label><input id="fd-fixed-bills" type="number" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
